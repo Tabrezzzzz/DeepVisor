@@ -59,6 +59,8 @@ export async function upsertMetaHourlyPerformance(
     week_start: input.weekStart,
     day_of_week: input.dayOfWeek,
     hour_of_day: input.hourOfDay,
+    advertiser_time_bucket: input.advertiserTimeBucket,
+    time_basis: input.timeBasis,
     currency_code: input.currencyCode,
     objective: input.objective,
     source: input.source,

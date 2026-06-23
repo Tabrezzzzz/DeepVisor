@@ -3,14 +3,21 @@ import { requireUserId } from '@/lib/server/actions/user/session';
 import { getOrCreateOrganizationBusinessContext } from '@/lib/server/actions/business/context';
 import { processMetaBackfillJobs } from '@/lib/server/sync/meta/processBackfillJobs';
 import { runManualBusinessSync } from '@/lib/server/sync/manualRefresh';
+import { toSupportedIntegrationPlatform } from '@/lib/shared';
 import type { RefreshIntegrationsResponse } from '@/lib/shared/types/integrations';
 
-export async function POST(_request: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
     const userId = await requireUserId();
     const context = await getOrCreateOrganizationBusinessContext(userId);
+    const body = (await request.json().catch(() => null)) as { platformKey?: unknown } | null;
+    const platformKey =
+      typeof body?.platformKey === 'string'
+        ? (toSupportedIntegrationPlatform(body.platformKey) ?? undefined)
+        : undefined;
     const result = await runManualBusinessSync({
       businessId: context.businessId,
+      platformKey,
     });
 
     if (!result.allowed) {
@@ -34,6 +41,7 @@ export async function POST(_request: NextRequest) {
 
     const queuedJobs = result.jobs.filter((job) => job.status === 'queued');
     const runningJobs = result.jobs.filter((job) => job.status === 'running');
+    const directCompletedCount = result.directSyncs.filter((sync) => sync.status === 'completed').length;
     let completedCount = 0;
     let processedCount = 0;
     let processingFailedCount = 0;
@@ -65,13 +73,14 @@ export async function POST(_request: NextRequest) {
       });
     }
 
+    completedCount += directCompletedCount;
     const failedCount = result.failedCount + processingFailedCount;
     const success = failedCount === 0;
     const message =
-      result.jobs.length === 0 && result.failedCount === 0
-        ? 'No syncable Meta ad account found.'
+      result.jobs.length === 0 && result.directSyncs.length === 0 && result.failedCount === 0
+        ? 'No syncable ad account found.'
         : completedCount > 0 && failedCount === 0
-          ? `Sync completed: ${completedCount} account${completedCount === 1 ? '' : 's'} updated with the latest available Meta data.`
+          ? `Sync completed: ${completedCount} account${completedCount === 1 ? '' : 's'} updated with the latest available data.`
           : completedCount > 0
             ? `Sync partially completed: ${completedCount} updated, ${failedCount} failed.`
             : failedCount > 0

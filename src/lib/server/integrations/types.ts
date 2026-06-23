@@ -52,6 +52,7 @@ export interface MetaOAuthToken {
   refresh_token?: string;
   token_type?: string;
   expires_in?: number;
+  scope?: string;
 }
 
 export interface MetaAdAccountSnapshot {
@@ -72,12 +73,45 @@ export interface MetaExchangeCodeInput {
   redirectUri: string;
 }
 
+export type GoogleOAuthToken = MetaOAuthToken;
+
+export interface GoogleAdsCredentials {
+  clientId: string;
+  clientSecret: string;
+  developerToken: string;
+  loginCustomerId?: string | null;
+  scopes?: string | null;
+  source?: 'workspace' | 'env';
+}
+
+export interface GoogleAdAccountSnapshot {
+  externalAccountId: string;
+  name: string | null;
+  status: string | null;
+  currencyCode: string | null;
+  timezone: string | null;
+  isManager: boolean | null;
+}
+
+export interface GoogleOAuthBuildInput {
+  state: string;
+  redirectUri: string;
+  credentials?: GoogleAdsCredentials;
+}
+
+export interface GoogleExchangeCodeInput {
+  code: string;
+  redirectUri: string;
+  credentials?: GoogleAdsCredentials;
+}
+
 export interface OAuthStateRecord {
   id: string;
   state: string;
   user_id: string;
   business_id: string;
   platform_id: string;
+  return_to: string | null;
   created_at: string;
   expires_at: string;
 }

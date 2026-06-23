@@ -65,7 +65,7 @@ const PLATFORM_SORT_ORDER = ['meta', 'google', 'tiktok'] as const;
 export function toSupportedIntegrationPlatform(
   value: string | null | undefined
 ): SupportedIntegrationPlatform | null {
-  return value === 'meta' ? 'meta' : null;
+  return value === 'meta' || value === 'google' ? value : null;
 }
 
 /**
@@ -169,6 +169,12 @@ export function getIntegrationAvailabilityCopy(
   if (platform.platformKey === 'meta') {
     return integrationNeedsAttention(platform.status)
       ? 'Reconnect Meta to restore syncing.'
+      : 'Available to connect now.';
+  }
+
+  if (platform.platformKey === 'google') {
+    return integrationNeedsAttention(platform.status)
+      ? 'Reconnect Google Ads to restore syncing.'
       : 'Available to connect now.';
   }
 

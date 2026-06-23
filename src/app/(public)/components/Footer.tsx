@@ -39,7 +39,7 @@ const Footer: FC = () => {
                     <Link href="/sign-up" className="transition hover:text-blue-700">
                         Sign up
                     </Link>
-                    <Link href="/privacy-policy" className="transition hover:text-blue-700">
+                    <Link href="/privacy" className="transition hover:text-blue-700">
                         Privacy
                     </Link>
                     <Link href="/terms-of-service" className="transition hover:text-blue-700">

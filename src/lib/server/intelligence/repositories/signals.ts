@@ -11,7 +11,7 @@ type IntelligenceClient = SupabaseClient<Database>;
 type SignalRow = {
   id: string;
   business_id: string;
-  platform_integration_id: string;
+  platform_integration_id: string | null;
   ad_account_id: string;
   source_assessment_id: string | null;
   source_digest_hash: string;
@@ -45,13 +45,13 @@ type SignalInsert = {
   last_detected_at: string;
   updated_at: string;
 };
-const SIGNAL_SCHEMA = 'intelligence';
+const SIGNAL_SCHEMA = 'public';
 
 function mapSignalRow(row: SignalRow): AdAccountSignal {
   return {
     id: row.id,
     businessId: row.business_id,
-    platformIntegrationId: row.platform_integration_id,
+    platformIntegrationId: row.platform_integration_id ?? '',
     adAccountId: row.ad_account_id,
     sourceAssessmentId: row.source_assessment_id,
     sourceDigestHash: row.source_digest_hash,

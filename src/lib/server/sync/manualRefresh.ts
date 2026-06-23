@@ -17,6 +17,7 @@ import type {
   SupportedIntegrationPlatform,
 } from '@/lib/shared/types/integrations';
 import { resolveMetaBackfillWindow } from './meta/client';
+import { syncBusinessPlatform } from './syncBusinessPlatform';
 
 const RATE_LIMIT_DETAIL_KEY = 'manual_sync_rate_limit';
 const BASE_COOLDOWN_MS = 30_000;
@@ -39,6 +40,7 @@ type ManualRefreshAllowedResult = {
   refreshedCount: number;
   failedCount: number;
   jobs: ManualRefreshJob[];
+  directSyncs: ManualRefreshDirectSync[];
 };
 
 type ManualRefreshBlockedResult = {
@@ -61,6 +63,14 @@ export type ManualRefreshJob = {
   syncType: HistoricalSyncType;
   requestedStartDate: string | null;
   requestedEndDate: string | null;
+};
+
+export type ManualRefreshDirectSync = {
+  businessId: string;
+  platformIntegrationId: string;
+  platformKey: SupportedIntegrationPlatform;
+  status: 'completed' | 'failed';
+  message: string;
 };
 
 function isSyncEligibleStatus(status: string): boolean {
@@ -226,13 +236,17 @@ async function persistRateLimitState(input: {
 
 async function enqueueManualRefreshJobs(integrations: IntegrationRow[]): Promise<{
   queuedCount: number;
+  directCompletedCount: number;
   failedCount: number;
   jobs: ManualRefreshJob[];
+  directSyncs: ManualRefreshDirectSync[];
 }> {
   const supabase = createAdminClient();
   let queuedCount = 0;
+  let directCompletedCount = 0;
   let failedCount = 0;
   const jobs: ManualRefreshJob[] = [];
+  const directSyncs: ManualRefreshDirectSync[] = [];
 
   for (const integration of integrations) {
     const platform = Array.isArray(integration.platforms)
@@ -240,14 +254,38 @@ async function enqueueManualRefreshJobs(integrations: IntegrationRow[]): Promise
       : integration.platforms;
     const platformKey = toSupportedIntegrationPlatform(platform?.key);
 
-    if (platformKey !== 'meta') {
+    if (!platformKey) {
       continue;
     }
 
     try {
       const primarySelection = getPrimaryAdAccountSelection(integration.integration_details);
       if (!primarySelection.externalAccountId) {
-        throw new Error('Meta integration has no selected ad account');
+        throw new Error(`${platformKey === 'google' ? 'Google Ads' : 'Meta'} integration has no selected ad account`);
+      }
+
+      if (platformKey === 'google') {
+        await syncBusinessPlatform({
+          businessId: integration.business_id,
+          integrationId: integration.id,
+          trigger: 'manual_refresh',
+          backfillDays: 30,
+          primaryExternalAccountId: primarySelection.externalAccountId,
+        });
+
+        directCompletedCount += 1;
+        directSyncs.push({
+          businessId: integration.business_id,
+          platformIntegrationId: integration.id,
+          platformKey,
+          status: 'completed',
+          message: 'Google Ads account refreshed.',
+        });
+        continue;
+      }
+
+      if (platformKey !== 'meta') {
+        continue;
       }
 
       const { data: adAccount, error: adAccountError } = await supabase
@@ -298,11 +336,18 @@ async function enqueueManualRefreshJobs(integrations: IntegrationRow[]): Promise
       queuedCount += 1;
     } catch (error) {
       failedCount += 1;
-      console.error('Failed to enqueue manual Meta sync job:', error);
+      directSyncs.push({
+        businessId: integration.business_id,
+        platformIntegrationId: integration.id,
+        platformKey,
+        status: 'failed',
+        message: error instanceof Error ? error.message : 'Failed to refresh integration.',
+      });
+      console.error(`Failed to refresh ${platformKey} integration:`, error);
     }
   }
 
-  return { queuedCount, failedCount, jobs };
+  return { queuedCount, directCompletedCount, failedCount, jobs, directSyncs };
 }
 
 export async function runManualBusinessSync(input: {
@@ -317,6 +362,7 @@ export async function runManualBusinessSync(input: {
       refreshedCount: 0,
       failedCount: 0,
       jobs: [],
+      directSyncs: [],
     };
   }
 
@@ -336,8 +382,9 @@ export async function runManualBusinessSync(input: {
   console.info(`Enqueued ${result.queuedCount} manual sync jobs for business ${input.businessId} with ${result.failedCount} failures.`);
   return {
     allowed: true,
-    refreshedCount: result.queuedCount,
+    refreshedCount: result.queuedCount + result.directCompletedCount,
     failedCount: result.failedCount,
     jobs: result.jobs,
+    directSyncs: result.directSyncs,
   };
 }

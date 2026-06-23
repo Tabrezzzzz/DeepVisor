@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { fetchMetaAdAccountSnapshots } from '@/lib/server/integrations/adapters/meta';
+import { getErrorMessage } from '@/lib/server/errors/message';
 import {
   beginHistoricalSyncJob,
   completeHistoricalSyncJob,
@@ -115,7 +116,7 @@ async function runMetaSyncStage<T>(label: string, operation: () => Promise<T>): 
   try {
     return await operation();
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unexpected Meta sync error';
+    const message = getErrorMessage(error, 'Unexpected Meta sync error');
     throw new Error(`Meta ${label} sync failed: ${message}`);
   }
 }
@@ -456,7 +457,7 @@ export async function syncMetaBusinessPlatform(input: {
       adAccountId: primaryAdAccount.id,
       jobId: job.id,
       failedAt: new Date().toISOString(),
-      errorMessage: error instanceof Error ? error.message : 'Meta historical sync failed',
+      errorMessage: getErrorMessage(error, 'Meta historical sync failed'),
     });
 
     throw error;

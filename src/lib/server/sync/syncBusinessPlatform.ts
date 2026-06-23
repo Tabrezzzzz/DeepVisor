@@ -15,14 +15,18 @@ import { toIntegrationStatus } from '@/lib/server/integrations/normalizers';
 import {
   getPrimaryAdAccountSelection,
   markIntegrationError,
+  markIntegrationSyncWarning,
   markIntegrationSynced,
   resolveIntegrationAccessToken,
+  resolveIntegrationRefreshToken,
+  resolveGoogleAdsCredentialsForBusiness,
   type BusinessIntegration,
 } from '@/lib/server/integrations/service';
 import { toSupportedIntegrationPlatform } from '@/lib/shared';
 import type { Database } from '@/lib/shared/types/supabase';
 import type { SupportedIntegrationPlatform } from '@/lib/shared/types/integrations';
 import { syncMetaBusinessPlatform } from './meta/syncMetaBusinessPlatform';
+import { syncGoogleBusinessPlatform } from './google/syncGoogleBusinessPlatform';
 import {
   FULL_HISTORY_BACKFILL_DAYS,
   type PlatformSyncMode,
@@ -115,6 +119,7 @@ function toSyncableIntegration(row: SyncIntegrationRow): SyncableBusinessIntegra
     status,
     isIntegrated: status === 'connected',
     accessToken: row.access_token_secret_id,
+    refreshToken: row.refresh_token_secret_id,
     integrationDetails: row.integration_details,
   };
 }
@@ -252,7 +257,13 @@ export async function syncBusinessPlatform(input: {
   }
 
   const accessToken = await resolveIntegrationAccessToken(supabase, integration);
-  if (!accessToken) {
+  const refreshToken = integration.platformKey === 'google'
+    ? await resolveIntegrationRefreshToken(supabase, integration)
+    : null;
+  const googleCredentials = integration.platformKey === 'google'
+    ? await resolveGoogleAdsCredentialsForBusiness(supabase, input.businessId)
+    : undefined;
+  if (!accessToken && !refreshToken) {
     await markIntegrationError(supabase, integration.id, 'Missing access token');
     throw new Error('Missing access token');
   }
@@ -267,6 +278,9 @@ export async function syncBusinessPlatform(input: {
         ? await (() => {
             if (!primaryExternalAccountId) {
               throw new Error('Select a Meta ad account before syncing this integration');
+            }
+            if (!accessToken) {
+              throw new Error('Missing Meta access token');
             }
 
             return syncMetaBusinessPlatform({
@@ -283,6 +297,27 @@ export async function syncBusinessPlatform(input: {
               syncMode,
             });
           })()
+        : integration.platformKey === 'google'
+          ? await (() => {
+              if (!primaryExternalAccountId) {
+                throw new Error('Select a Google Ads account before syncing this integration');
+              }
+              if (!refreshToken) {
+                throw new Error('Missing Google refresh token');
+              }
+
+              return syncGoogleBusinessPlatform({
+                supabase,
+                businessId: input.businessId,
+                platformId: integration.platformId,
+                platformIntegrationId: integration.id,
+                refreshToken,
+                credentials: googleCredentials,
+                backfillDays,
+                syncedAt: startedAt,
+                primaryExternalAccountId,
+              });
+            })()
         : null;
 
     if (!syncResult) {
@@ -360,7 +395,7 @@ export async function syncBusinessPlatform(input: {
       },
     };
   } catch (error) {
-    await markIntegrationError(
+    await markIntegrationSyncWarning(
       supabase,
       integration.id,
       error instanceof Error ? error.message : 'Sync failed'

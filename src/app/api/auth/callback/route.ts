@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { resolvePostAuthRedirectPath } from '@/lib/server/auth/postAuthRedirect';
 import { createServerClient } from '@/lib/server/supabase/server';
+import { getForwardedOrigin } from '@/lib/server/http/origin';
 
 function safeNextPath(value: string | null): string {
   if (!value || !value.startsWith('/') || value.startsWith('//')) {
@@ -12,17 +13,18 @@ function safeNextPath(value: string | null): string {
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
+  const origin = getForwardedOrigin(request.headers, requestUrl.origin);
   const code = requestUrl.searchParams.get('code');
   const oauthError = requestUrl.searchParams.get('error');
 
   if (oauthError) {
-    const loginUrl = new URL('/sign-up', requestUrl.origin);
+    const loginUrl = new URL('/sign-up', origin);
     loginUrl.searchParams.set('error', 'google_oauth_failed');
     return NextResponse.redirect(loginUrl);
   }
 
   if (!code) {
-    const loginUrl = new URL('/sign-up', requestUrl.origin);
+    const loginUrl = new URL('/sign-up', origin);
     loginUrl.searchParams.set('error', 'auth_callback_missing_code');
     return NextResponse.redirect(loginUrl);
   }
@@ -31,7 +33,7 @@ export async function GET(request: NextRequest) {
   const { error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
-    const loginUrl = new URL('/sign-up', requestUrl.origin);
+    const loginUrl = new URL('/sign-up', origin);
     loginUrl.searchParams.set('error', 'auth_callback_failed');
     return NextResponse.redirect(loginUrl);
   }
@@ -41,7 +43,7 @@ export async function GET(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    const loginUrl = new URL('/login', requestUrl.origin);
+    const loginUrl = new URL('/login', origin);
     loginUrl.searchParams.set('error', 'auth_callback_failed');
     return NextResponse.redirect(loginUrl);
   }
@@ -60,5 +62,5 @@ export async function GET(request: NextRequest) {
     }
   })();
 
-  return NextResponse.redirect(new URL(redirectPath, requestUrl.origin));
+  return NextResponse.redirect(new URL(redirectPath, origin));
 }

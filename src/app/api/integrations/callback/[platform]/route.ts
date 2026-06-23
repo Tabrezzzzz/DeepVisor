@@ -7,16 +7,23 @@ import {
   validateMetaAccessToken,
 } from '@/lib/server/integrations/adapters/meta';
 import {
+  exchangeGoogleCodeForToken,
+  fetchGoogleAdAccountSnapshots,
+  validateGoogleRefreshToken,
+} from '@/lib/server/integrations/adapters/google';
+import {
   buildIntegrationResultPath,
   consumeOAuthState,
   getBaseUrl,
   markIntegrationError,
   parseSupportedIntegrationPlatform,
   resolvePlatformByKey,
+  resolveGoogleAdsCredentialsForBusiness,
   sanitizeReturnTo,
   upsertPlatformIntegration,
 } from '@/lib/server/integrations/service';
 import { discoverMetaAdAccounts } from '@/lib/server/sync/meta/discoverMetaAdAccounts';
+import { discoverGoogleAdAccounts } from '@/lib/server/sync/google/discoverGoogleAdAccounts';
 import { createAdminClient } from '@/lib/server/supabase/admin';
 import type { SupportedIntegrationPlatform } from '@/lib/shared/types/integrations';
 
@@ -84,11 +91,11 @@ export async function GET(
   context: { params: Promise<{ platform: string }> }
 ) {
   const { platform } = await context.params;
-  const returnTo = sanitizeReturnTo(request.nextUrl.searchParams.get('returnTo'));
+  const fallbackReturnTo = sanitizeReturnTo(request.nextUrl.searchParams.get('returnTo'));
   const platformKey = parseSupportedIntegrationPlatform(platform);
 
   if (!platformKey) {
-    return redirectWithStatus(request.url, returnTo, 'meta', 'error');
+    return redirectWithStatus(request.url, fallbackReturnTo, 'meta', 'error');
   }
 
   const code = request.nextUrl.searchParams.get('code');
@@ -96,7 +103,7 @@ export async function GET(
   const providerError = request.nextUrl.searchParams.get('error');
 
   if (providerError || !code || !state) {
-    return redirectWithStatus(request.url, returnTo, platformKey, 'error');
+    return redirectWithStatus(request.url, fallbackReturnTo, platformKey, 'error');
   }
 
   let integrationId: string | null = null;
@@ -108,7 +115,7 @@ export async function GET(
 
     const integrationPlatform = await resolvePlatformByKey(supabase, platformKey);
     if (!integrationPlatform) {
-      return redirectWithStatus(request.url, returnTo, platformKey, 'error');
+      return redirectWithStatus(request.url, fallbackReturnTo, platformKey, 'error');
     }
 
     const oauthState = await consumeOAuthState(supabase, {
@@ -118,19 +125,36 @@ export async function GET(
     });
 
     if (!oauthState || oauthState.business_id !== businessContext.businessId) {
-      return redirectWithStatus(request.url, returnTo, platformKey, 'error');
+      return redirectWithStatus(request.url, fallbackReturnTo, platformKey, 'error');
     }
 
+    const returnTo = sanitizeReturnTo(oauthState.return_to);
     const baseUrl = getBaseUrl(request.url);
     const redirectUri = new URL(`/api/integrations/callback/${platformKey}`, baseUrl);
-    redirectUri.searchParams.set('returnTo', returnTo);
+    const googleCredentials = platformKey === 'google'
+      ? await resolveGoogleAdsCredentialsForBusiness(supabase, businessContext.businessId)
+      : undefined;
 
-    const token = await exchangeMetaCodeForToken({
-      code,
-      redirectUri: redirectUri.toString(),
-    });
-    
-    await validateMetaAccessToken(token.access_token);
+    const token = platformKey === 'google'
+      ? await exchangeGoogleCodeForToken({
+          code,
+          redirectUri: redirectUri.toString(),
+          credentials: googleCredentials,
+        })
+      : await exchangeMetaCodeForToken({
+          code,
+          redirectUri: redirectUri.toString(),
+        });
+
+    if (platformKey === 'google') {
+      if (!token.refresh_token) {
+        throw new Error('Google did not return a refresh token. Reconnect and approve offline access.');
+      }
+      await validateGoogleRefreshToken(token.refresh_token, googleCredentials);
+    } else {
+      await validateMetaAccessToken(token.access_token);
+    }
+
     integrationId = await upsertPlatformIntegration(supabase, {
       businessId: businessContext.businessId,
       platformId: integrationPlatform.id,
@@ -144,23 +168,61 @@ export async function GET(
         refresh_token_secret_id: token.refresh_token,
         token_type: token.token_type,
         expires_in: token.expires_in,
+        scopes: token.scope ? token.scope.split(/\s+/).filter(Boolean) : undefined,
         issued_at: new Date().toISOString(),
       },
     });
 
-    const accessibleAccounts = await fetchMetaAdAccountSnapshots(token.access_token);
-    if (accessibleAccounts.length === 0) {
-      throw new Error('No accessible Meta ad accounts were found for this integration');
+    let accessibleAccounts;
+    try {
+      accessibleAccounts = platformKey === 'google'
+        ? await fetchGoogleAdAccountSnapshots(token.refresh_token!, googleCredentials)
+        : await fetchMetaAdAccountSnapshots(token.access_token);
+    } catch (discoveryError) {
+      const message = discoveryError instanceof Error
+        ? discoveryError.message
+        : `Failed to discover ${platformKey === 'google' ? 'Google Ads' : 'Meta'} ad accounts`;
+
+      await markIntegrationError(supabase, integrationId, message);
+      console.warn(`${platformKey} connected but ad account discovery failed:`, message);
+
+      return redirectWithAccountSelection({
+        requestUrl: request.url,
+        returnTo,
+        platform: platformKey,
+        integrationId,
+      });
     }
 
-    // Run discovery for every successful Meta callback so both the multi-account
+    if (accessibleAccounts.length === 0) {
+      const message = `${platformKey === 'google' ? 'Google Ads' : 'Meta'} connected, but no accessible ad accounts were found for this user.`;
+      await markIntegrationError(supabase, integrationId, message);
+
+      return redirectWithAccountSelection({
+        requestUrl: request.url,
+        returnTo,
+        platform: platformKey,
+        integrationId,
+      });
+    }
+
+    // Run discovery for every successful callback so both the multi-account
     // and single-account paths start from the same registered account state.
-    await discoverMetaAdAccounts({
-      supabase,
-      businessId: businessContext.businessId,
-      platformId: integrationPlatform.id,
-      snapshots: accessibleAccounts,
-    });
+    if (platformKey === 'google') {
+      await discoverGoogleAdAccounts({
+        supabase,
+        businessId: businessContext.businessId,
+        platformId: integrationPlatform.id,
+        snapshots: accessibleAccounts as Awaited<ReturnType<typeof fetchGoogleAdAccountSnapshots>>,
+      });
+    } else {
+      await discoverMetaAdAccounts({
+        supabase,
+        businessId: businessContext.businessId,
+        platformId: integrationPlatform.id,
+        snapshots: accessibleAccounts as Awaited<ReturnType<typeof fetchMetaAdAccountSnapshots>>,
+      });
+    }
 
     if (accessibleAccounts.length > 1) {
       return redirectWithAccountSelection({
@@ -196,6 +258,6 @@ export async function GET(
       }
     }
 
-    return redirectWithStatus(request.url, returnTo, platformKey, 'error');
+    return redirectWithStatus(request.url, fallbackReturnTo, platformKey, 'error');
   }
 }

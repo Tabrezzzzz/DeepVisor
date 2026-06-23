@@ -4,6 +4,7 @@ import { generateState } from '@/lib/shared/utils/guards';
 import type { Database, Json } from '@/lib/shared/types/supabase';
 import { upsertAdAccounts } from '@/lib/server/repositories/ad_accounts/upsertAdAccounts';
 import type {
+  GoogleAdsCredentials,
   IntegrationDetails,
   IntegrationPlatform,
   IntegrationReturnTo,
@@ -17,6 +18,10 @@ import {
   fetchMetaAdAccountSnapshots,
   validateMetaAccessToken,
 } from '@/lib/server/integrations/adapters/meta';
+import {
+  fetchGoogleAdAccountSnapshots,
+  getEnvGoogleAdsCredentials,
+} from '@/lib/server/integrations/adapters/google';
 
 type AppSupabaseClient = SupabaseClient<Database>;
 type PlatformIntegrationStorageRow = {
@@ -38,6 +43,20 @@ type PlatformIntegrationStorageRow = {
   updated_at: string;
   platforms?: { key: string } | { key: string }[] | null;
 };
+
+type GoogleAdsWorkspaceCredentialsRow = {
+  business_id: string;
+  client_id: string;
+  client_secret_secret_id: string;
+  developer_token_secret_id: string;
+  login_customer_id: string | null;
+  scopes: string | null;
+  configured_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type GoogleAdsCredentialMode = 'app' | 'workspace';
 
 const ALLOWED_RETURN_TO: ReadonlySet<string> = new Set(['/onboarding', '/integration']);
 
@@ -194,6 +213,177 @@ async function upsertSecret(
   return data as string;
 }
 
+function normalizeGoogleCustomerId(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const normalized = value.replace(/^customers\//, '').replaceAll('-', '').trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+export function getGoogleAdsCredentialMode(): GoogleAdsCredentialMode {
+  return process.env.GOOGLE_ADS_CREDENTIAL_MODE?.trim().toLowerCase() === 'workspace'
+    ? 'workspace'
+    : 'app';
+}
+
+export async function upsertGoogleAdsWorkspaceCredentials(
+  supabase: AppSupabaseClient,
+  input: {
+    businessId: string;
+    userId: string;
+    clientId: string;
+    clientSecret: string;
+    developerToken: string;
+    loginCustomerId?: string | null;
+    scopes?: string | null;
+  }
+): Promise<void> {
+  const now = new Date().toISOString();
+  const clientId = input.clientId.trim();
+  const clientSecret = input.clientSecret.trim();
+  const developerToken = input.developerToken.trim();
+
+  if (!clientId || !clientSecret || !developerToken) {
+    throw new Error('Google Ads client ID, client secret, and developer token are required.');
+  }
+
+  const clientSecretSecretId = await upsertSecret(
+    supabase,
+    clientSecret,
+    `business:${input.businessId}:google_ads:client_secret`,
+    'Workspace Google Ads OAuth client secret'
+  );
+  const developerTokenSecretId = await upsertSecret(
+    supabase,
+    developerToken,
+    `business:${input.businessId}:google_ads:developer_token`,
+    'Workspace Google Ads developer token'
+  );
+
+  const { error } = await (supabase as any)
+    .from('google_ads_workspace_credentials')
+    .upsert(
+      {
+        business_id: input.businessId,
+        client_id: clientId,
+        client_secret_secret_id: clientSecretSecretId,
+        developer_token_secret_id: developerTokenSecretId,
+        login_customer_id: normalizeGoogleCustomerId(input.loginCustomerId),
+        scopes: input.scopes?.trim() || 'https://www.googleapis.com/auth/adwords',
+        configured_by_user_id: input.userId,
+        updated_at: now,
+      },
+      { onConflict: 'business_id' }
+    );
+
+  if (error) throw error;
+}
+
+async function readSecret(supabase: AppSupabaseClient, secretId: string | null): Promise<string | null> {
+  if (!secretId) return null;
+
+  const { data, error } = await (supabase as any).rpc('get_platform_token', {
+    secret_id: secretId,
+  });
+
+  if (error) throw error;
+  return typeof data === 'string' && data.length > 0 ? data : null;
+}
+
+export async function getGoogleAdsWorkspaceCredentialStatus(
+  supabase: AppSupabaseClient,
+  businessId: string
+): Promise<{
+  configured: boolean;
+  mode: GoogleAdsCredentialMode;
+  source: 'workspace' | 'env' | 'missing';
+  clientIdConfigured: boolean;
+  clientSecretConfigured: boolean;
+  developerTokenConfigured: boolean;
+  loginCustomerId: string | null;
+  scopes: string | null;
+  updatedAt: string | null;
+}> {
+  const mode = getGoogleAdsCredentialMode();
+  const { data, error } = await (supabase as any)
+    .from('google_ads_workspace_credentials')
+    .select('client_id, client_secret_secret_id, developer_token_secret_id, login_customer_id, scopes, updated_at')
+    .eq('business_id', businessId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  const row = data as Partial<GoogleAdsWorkspaceCredentialsRow> | null;
+  if (row?.client_id && row.client_secret_secret_id && row.developer_token_secret_id) {
+    return {
+      configured: true,
+      mode,
+      source: 'workspace',
+      clientIdConfigured: true,
+      clientSecretConfigured: true,
+      developerTokenConfigured: true,
+      loginCustomerId: row.login_customer_id ?? null,
+      scopes: row.scopes ?? null,
+      updatedAt: row.updated_at ?? null,
+    };
+  }
+
+  const envConfigured = Boolean(
+    process.env.GOOGLE_ADS_CLIENT_ID?.trim() &&
+      process.env.GOOGLE_ADS_CLIENT_SECRET?.trim() &&
+      process.env.GOOGLE_ADS_DEVELOPER_TOKEN?.trim()
+  );
+
+  return {
+    configured: mode === 'app' ? envConfigured : false,
+    mode,
+    source: mode === 'app' && envConfigured ? 'env' : 'missing',
+    clientIdConfigured: Boolean(process.env.GOOGLE_ADS_CLIENT_ID?.trim()),
+    clientSecretConfigured: Boolean(process.env.GOOGLE_ADS_CLIENT_SECRET?.trim()),
+    developerTokenConfigured: Boolean(process.env.GOOGLE_ADS_DEVELOPER_TOKEN?.trim()),
+    loginCustomerId: normalizeGoogleCustomerId(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID),
+    scopes: process.env.GOOGLE_ADS_SCOPES?.trim() || 'https://www.googleapis.com/auth/adwords',
+    updatedAt: null,
+  };
+}
+
+export async function resolveGoogleAdsCredentialsForBusiness(
+  supabase: AppSupabaseClient,
+  businessId: string
+): Promise<GoogleAdsCredentials> {
+  if (getGoogleAdsCredentialMode() === 'app') {
+    return getEnvGoogleAdsCredentials();
+  }
+
+  const { data, error } = await (supabase as any)
+    .from('google_ads_workspace_credentials')
+    .select('client_id, client_secret_secret_id, developer_token_secret_id, login_customer_id, scopes')
+    .eq('business_id', businessId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  const row = data as GoogleAdsWorkspaceCredentialsRow | null;
+  if (!row) {
+    throw new Error('This workspace must add Google Ads credentials before connecting Google Ads.');
+  }
+
+  const clientSecret = await readSecret(supabase, row.client_secret_secret_id);
+  const developerToken = await readSecret(supabase, row.developer_token_secret_id);
+
+  if (!row.client_id || !clientSecret || !developerToken) {
+    throw new Error('Workspace Google Ads credentials are incomplete.');
+  }
+
+  return {
+    clientId: row.client_id,
+    clientSecret,
+    developerToken,
+    loginCustomerId: row.login_customer_id,
+    scopes: row.scopes,
+    source: 'workspace',
+  };
+}
+
 /**
  * Loads the platform record backing a supported integration key.
  *
@@ -230,7 +420,7 @@ export async function resolvePlatformByKey(
  */
 export async function createOAuthState(
   supabase: AppSupabaseClient,
-  input: { userId: string; businessId: string; platformId: string }
+  input: { userId: string; businessId: string; platformId: string; returnTo?: IntegrationReturnTo }
 ): Promise<string> {
   const state = generateState();
 
@@ -238,6 +428,7 @@ export async function createOAuthState(
     user_id: input.userId,
     business_id: input.businessId,
     platform_id: input.platformId,
+    return_to: input.returnTo ?? null,
     state,
     created_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
@@ -260,7 +451,7 @@ export async function consumeOAuthState(
 ): Promise<OAuthStateRecord | null> {
   const { data, error } = await supabase
     .from('oauth_states')
-    .select('id, state, user_id, business_id, platform_id, created_at, expires_at')
+    .select('id, state, user_id, business_id, platform_id, return_to, created_at, expires_at')
     .eq('state', input.state)
     .eq('user_id', input.userId)
     .eq('platform_id', input.platformId)
@@ -480,6 +671,7 @@ export type BusinessIntegration = {
   status: IntegrationStatus;
   isIntegrated: boolean;
   accessToken: string | null;
+  refreshToken: string | null;
   integrationDetails: Json;
 };
 
@@ -488,6 +680,8 @@ export type MetaIntegrationAccountOption = {
   name: string | null;
   status: string | null;
 };
+
+export type IntegrationAccountOption = MetaIntegrationAccountOption;
 
 export type RefreshBusinessAdAccountsResult = {
   refreshedCount: number;
@@ -525,6 +719,7 @@ export async function listBusinessIntegrations(
       status,
       isIntegrated: status === 'connected',
       accessToken: row.access_token_secret_id,
+      refreshToken: row.refresh_token_secret_id,
       integrationDetails: row.integration_details,
     };
   });
@@ -557,6 +752,34 @@ export async function resolveIntegrationAccessToken(
 
   return typeof accessToken === 'string' && accessToken.length > 0
     ? accessToken
+    : null;
+}
+
+export async function resolveIntegrationRefreshToken(
+  supabase: AppSupabaseClient,
+  integration: BusinessIntegration
+): Promise<string | null> {
+  const details = asRecord(integration.integrationDetails);
+  const secretId =
+    (typeof details.refresh_token === 'string' && details.refresh_token) ||
+    (typeof details.refresh_token_secret_id === 'string' && details.refresh_token_secret_id) ||
+    integration.refreshToken ||
+    null;
+
+  if (!secretId) {
+    return null;
+  }
+
+  const { data: refreshToken, error } = await (supabase as any).rpc('get_platform_token', {
+    secret_id: secretId,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return typeof refreshToken === 'string' && refreshToken.length > 0
+    ? refreshToken
     : null;
 }
 
@@ -623,6 +846,7 @@ export async function getBusinessIntegrationById(
     status,
     isIntegrated: status === 'connected',
     accessToken: row.access_token_secret_id,
+    refreshToken: row.refresh_token_secret_id,
     integrationDetails: row.integration_details,
   };
 }
@@ -655,6 +879,31 @@ export async function listMetaAccessibleAdAccounts(
   }));
 }
 
+export async function listGoogleAccessibleAdAccounts(
+  supabase: AppSupabaseClient,
+  integration: BusinessIntegration,
+  businessId?: string
+): Promise<IntegrationAccountOption[]> {
+  if (integration.platformKey !== 'google') {
+    return [];
+  }
+
+  const refreshToken = await resolveIntegrationRefreshToken(supabase, integration);
+  if (!refreshToken) {
+    throw new Error('Missing Google refresh token');
+  }
+
+  const credentials = businessId
+    ? await resolveGoogleAdsCredentialsForBusiness(supabase, businessId)
+    : undefined;
+  const snapshots = await fetchGoogleAdAccountSnapshots(refreshToken, credentials);
+  return snapshots.map((snapshot) => ({
+    externalAccountId: snapshot.externalAccountId,
+    name: snapshot.name,
+    status: snapshot.status,
+  }));
+}
+
 /**
  * Stores the user's chosen primary Meta ad account on the integration record.
  *
@@ -663,6 +912,29 @@ export async function listMetaAccessibleAdAccounts(
  * @returns A promise that resolves once the integration details have been updated.
  */
 export async function setPrimaryMetaAdAccount(
+  supabase: AppSupabaseClient,
+  input: {
+    integrationId: string;
+    externalAccountId: string;
+    name: string | null;
+  }
+): Promise<void> {
+  await patchIntegrationDetails(
+    supabase,
+    input.integrationId,
+    {
+      primary_ad_account_external_id: input.externalAccountId,
+      primary_ad_account_name: input.name,
+      account_selection_completed_at: new Date().toISOString(),
+      last_error: null,
+    },
+    {
+      last_error: null,
+    }
+  );
+}
+
+export async function setPrimaryGoogleAdAccount(
   supabase: AppSupabaseClient,
   input: {
     integrationId: string;
@@ -895,6 +1167,26 @@ export async function markIntegrationError(
     },
     {
       status: 'error',
+      last_error: message,
+    }
+  );
+}
+
+/**
+ * Stores a non-auth sync failure without changing the connection state.
+ */
+export async function markIntegrationSyncWarning(
+  supabase: AppSupabaseClient,
+  integrationId: string,
+  message: string
+): Promise<void> {
+  await patchIntegrationDetails(
+    supabase,
+    integrationId,
+    {
+      last_error: message,
+    },
+    {
       last_error: message,
     }
   );

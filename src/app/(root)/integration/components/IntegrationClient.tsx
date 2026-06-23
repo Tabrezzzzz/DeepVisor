@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import {
   ActionIcon,
@@ -15,11 +15,13 @@ import {
   Menu,
   Modal,
   Paper,
+  PasswordInput,
   Progress,
   Select,
   SimpleGrid,
   Stack,
   Text,
+  TextInput,
   ThemeIcon,
   Title,
 } from '@mantine/core';
@@ -35,6 +37,7 @@ import {
   IconTrash,
 } from '@tabler/icons-react';
 import { useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import MetaIntegrationFlow from '@/components/integrations/MetaIntegrationFlow';
 import {
@@ -115,6 +118,46 @@ type MetaSelectResponse = {
   };
 };
 
+type GoogleCredentialStatus = {
+  configured: boolean;
+  mode: 'app' | 'workspace';
+  source: 'workspace' | 'env' | 'missing';
+  clientIdConfigured: boolean;
+  clientSecretConfigured: boolean;
+  developerTokenConfigured: boolean;
+  loginCustomerId: string | null;
+  scopes: string | null;
+  updatedAt: string | null;
+};
+
+type GoogleCredentialResponse = {
+  success?: boolean;
+  data?: GoogleCredentialStatus;
+  error?: {
+    userMessage?: string;
+  };
+};
+
+type SearchDrivenFlow = {
+  integration: string | null;
+  status: string | null;
+  requiresAccountSelection: boolean;
+  integrationId: string | null;
+  externalAccountId: string | null;
+  autoSync: boolean;
+};
+
+function readFlowState(searchParams: { get: (key: string) => string | null }): SearchDrivenFlow {
+  return {
+    integration: searchParams.get('integration'),
+    status: searchParams.get('status'),
+    requiresAccountSelection: searchParams.get('requires_account_selection') === '1',
+    integrationId: searchParams.get('integrationId'),
+    externalAccountId: searchParams.get('externalAccountId'),
+    autoSync: searchParams.get('auto_sync') === '1',
+  };
+}
+
 /**
  * Shared summary card used in the integrations page hero for workspace-level counts and status.
  */
@@ -186,6 +229,7 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
   const [disconnectingPlatformId, setDisconnectingPlatformId] = useState<string | null>(null);
   const [selectedPlatform, setSelectedPlatform] = useState<DisplayPlatform | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [connectingGoogle, setConnectingGoogle] = useState(false);
   const [focusedPlatformId, setFocusedPlatformId] = useState<string | null>(null);
   const [accountSelectionPlatform, setAccountSelectionPlatform] = useState<Platform | null>(null);
   const [accountOptions, setAccountOptions] = useState<MetaAccountOption[]>([]);
@@ -193,7 +237,16 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
   const [loadingAccountOptions, setLoadingAccountOptions] = useState(false);
   const [submittingAccountSelection, setSubmittingAccountSelection] = useState(false);
   const [pitchDetachedPlatforms, setPitchDetachedPlatforms] = useState<PitchDetachedPlatform[]>([]);
+  const [googleCredentialModalOpened, setGoogleCredentialModalOpened] = useState(false);
+  const [googleCredentialSaving, setGoogleCredentialSaving] = useState(false);
+  const [googleClientId, setGoogleClientId] = useState('');
+  const [googleClientSecret, setGoogleClientSecret] = useState('');
+  const [googleDeveloperToken, setGoogleDeveloperToken] = useState('');
+  const [googleLoginCustomerId, setGoogleLoginCustomerId] = useState('');
+  const [googleScopes, setGoogleScopes] = useState('https://www.googleapis.com/auth/adwords');
+  const handledGoogleSearchKey = useRef<string | null>(null);
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     const syncPitchDetachedPlatforms = () => {
@@ -213,17 +266,20 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
     [pitchDetachedPlatforms]
   );
 
-  const sortedPlatforms = sortIntegrationPlatforms(
-    platforms.map((platform) => {
-      const detached = pitchDetachedByPlatformId.has(platform.id);
+  const sortedPlatforms = useMemo(
+    () => sortIntegrationPlatforms(
+      platforms.map((platform) => {
+        const detached = pitchDetachedByPlatformId.has(platform.id);
 
-      return {
-        ...platform,
-        status: detached ? 'disconnected' : platform.status,
-        lastError: detached ? null : platform.lastError,
-        pitchDetached: detached,
-      } satisfies DisplayPlatform;
-    })
+        return {
+          ...platform,
+          status: detached ? 'disconnected' : platform.status,
+          lastError: detached ? null : platform.lastError,
+          pitchDetached: detached,
+        } satisfies DisplayPlatform;
+      })
+    ),
+    [pitchDetachedByPlatformId, platforms]
   );
   const connectedPlatforms = sortedPlatforms.filter((platform) => isIntegrationConnected(platform.status));
   const attentionPlatforms = sortedPlatforms.filter((platform) => integrationNeedsAttention(platform.status));
@@ -253,7 +309,8 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
     : false;
   const focusedPlatformPreviewOnly = Boolean(focusedPlatform) &&
     !focusedPlatformConnected &&
-    focusedPlatform?.platformKey !== 'meta';
+    focusedPlatform?.platformKey !== 'meta' &&
+    focusedPlatform?.platformKey !== 'google';
   const focusedHeroTitle = !focusedPlatform
     ? 'Connect each ad channel once, then let DeepVisor run from it.'
     : focusedPlatformPitchDetached
@@ -269,6 +326,8 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
       ? `${focusedPlatform.platformName} is already live in DeepVisor. Keep its sync current, manage its primary ad account, and use this as the clean channel source for dashboard, reports, and calendar work.`
       : focusedPlatform.platformKey === 'meta'
         ? 'Authorize Meta, choose the one ad account DeepVisor should watch, and start feeding reporting, calendar, and recommendations from a single clean source.'
+        : focusedPlatform.platformKey === 'google'
+          ? 'Authorize Google Ads, choose one customer account, and sync campaigns, ad groups, ads, and recent performance into reports.'
         : `${focusedPlatform.platformName} is still a preview channel. Its connection pattern is visible here so you can plan how it will slot into the workspace once support is enabled.`;
   const focusedPrimaryLabel = !focusedPlatform
     ? 'Sync connected channels'
@@ -344,11 +403,17 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
     }
   };
 
-  const handleRefreshConnections = async () => {
+  const handleRefreshConnections = async (platformKey?: string) => {
     setRefreshing(true);
     try {
       const response = await fetch('/api/sync/refresh', {
         method: 'POST',
+        headers: platformKey
+          ? {
+              'Content-Type': 'application/json',
+            }
+          : undefined,
+        body: platformKey ? JSON.stringify({ platformKey }) : undefined,
       });
       const result = (await response.json()) as {
         success?: boolean;
@@ -374,44 +439,184 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
     }
   };
 
-  const handleOpenAccountSelection = async (platform: Platform) => {
-    if (platform.platformKey !== 'meta' || !platform.integrationId) {
+  const startGoogleOAuth = () => {
+    const encodedReturnTo = encodeURIComponent('/integration');
+    window.location.href = `/api/integrations/connect/google?returnTo=${encodedReturnTo}`;
+  };
+
+  const connectGoogle = async () => {
+    setConnectingGoogle(true);
+
+    try {
+      const response = await fetch('/api/integrations/google/credentials');
+      const body = (await response.json().catch(() => ({}))) as GoogleCredentialResponse;
+
+      if (!response.ok || !body.success) {
+        throw new Error(body.error?.userMessage || 'Failed to check Google Ads credentials.');
+      }
+
+      if (body.data?.mode === 'app' && body.data.configured) {
+        startGoogleOAuth();
+        return;
+      }
+
+      if (body.data?.mode === 'workspace' && body.data.source === 'workspace') {
+        startGoogleOAuth();
+        return;
+      }
+
+      if (body.data?.mode === 'app') {
+        throw new Error('Google Ads app credentials are not configured on this deployment.');
+      }
+
+      setGoogleScopes(body.data?.scopes || 'https://www.googleapis.com/auth/adwords');
+      setGoogleLoginCustomerId(body.data?.loginCustomerId || '');
+      setGoogleCredentialModalOpened(true);
+      setConnectingGoogle(false);
+    } catch (error) {
+      setConnectingGoogle(false);
+      toast.error(error instanceof Error ? error.message : 'Failed to start Google Ads connection.');
+    }
+  };
+
+  const canPlatformConnectNow = (platform: Platform | DisplayPlatform | null): boolean => {
+    return Boolean(
+      platform &&
+        !isIntegrationConnected(platform.status) &&
+        (platform.platformKey === 'meta' || platform.platformKey === 'google')
+    );
+  };
+
+  const connectPlatform = (platform: Platform | DisplayPlatform | null, connectMeta: () => void) => {
+    if (!platform) return;
+    if (platform.platformKey === 'meta') {
+      connectMeta();
+      return;
+    }
+    if (platform.platformKey === 'google') {
+      void connectGoogle();
+    }
+  };
+
+  const saveGoogleCredentialsAndConnect = async () => {
+    setGoogleCredentialSaving(true);
+
+    try {
+      const response = await fetch('/api/integrations/google/credentials', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          clientId: googleClientId,
+          clientSecret: googleClientSecret,
+          developerToken: googleDeveloperToken,
+          loginCustomerId: googleLoginCustomerId,
+          scopes: googleScopes,
+        }),
+      });
+      const body = (await response.json().catch(() => ({}))) as GoogleCredentialResponse;
+
+      if (!response.ok || !body.success) {
+        throw new Error(body.error?.userMessage || 'Failed to save Google Ads credentials.');
+      }
+
+      toast.success('Google Ads credentials saved.');
+      setGoogleCredentialModalOpened(false);
+      setConnectingGoogle(true);
+      startGoogleOAuth();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to save Google Ads credentials.');
+    } finally {
+      setGoogleCredentialSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    const flow = readFlowState(searchParams);
+    const searchKey = searchParams.toString();
+
+    if (handledGoogleSearchKey.current === searchKey) {
+      return;
+    }
+
+    if (flow.integration !== 'google' || !flow.status) {
+      return;
+    }
+
+    handledGoogleSearchKey.current = searchKey;
+
+    if (flow.status === 'error') {
+      setConnectingGoogle(false);
+      toast.error('Failed to connect Google Ads. Please try again.');
+      router.replace('/integration');
+      router.refresh();
+      return;
+    }
+
+    const platform = sortedPlatforms.find(
+      (candidate) => candidate.platformKey === 'google' && candidate.integrationId === flow.integrationId
+    );
+
+    if (flow.requiresAccountSelection && flow.integrationId && platform) {
+      void handleOpenAccountSelection(platform, {
+        preferredExternalAccountId: flow.externalAccountId,
+        autoSync: flow.autoSync,
+      });
+      router.replace('/integration');
+      return;
+    }
+
+    if (flow.status === 'connected') {
+      setConnectingGoogle(false);
+      toast.success('Google Ads connected successfully.');
+      router.replace('/integration');
+      router.refresh();
+    }
+  }, [searchParams, sortedPlatforms]);
+
+  const handleOpenAccountSelection = async (
+    platform: Platform,
+    options?: { preferredExternalAccountId?: string | null; autoSync?: boolean }
+  ) => {
+    if ((platform.platformKey !== 'meta' && platform.platformKey !== 'google') || !platform.integrationId) {
       return;
     }
 
     setSelectedPlatform(null);
     setAccountSelectionPlatform(platform);
     setAccountOptions([]);
-    setSelectedAccountExternalId(platform.primaryAdAccountExternalId);
+    setSelectedAccountExternalId(options?.preferredExternalAccountId ?? platform.primaryAdAccountExternalId);
     setLoadingAccountOptions(true);
 
     try {
       const response = await fetch(
-        `/api/integrations/meta/ad-accounts?integrationId=${platform.integrationId}`
+        `/api/integrations/${platform.platformKey}/ad-accounts?integrationId=${platform.integrationId}`
       );
       const body = (await response.json().catch(() => ({}))) as MetaAccountListResponse;
 
       if (!response.ok || !body?.success) {
-        throw new Error(body?.error?.userMessage || 'Failed to load Meta ad accounts');
+        throw new Error(body?.error?.userMessage || `Failed to load ${platform.platformName} accounts`);
       }
 
-      const options = Array.isArray(body.data?.accounts)
+      const accountOptionsResult = Array.isArray(body.data?.accounts)
         ? body.data.accounts.map((account) => ({
             value: account.externalAccountId,
             label: account.name || account.externalAccountId,
           }))
         : [];
 
-      setAccountOptions(options);
+      setAccountOptions(accountOptionsResult);
       setSelectedAccountExternalId(
-        body.data?.primaryAdAccountExternalId ??
+        options?.preferredExternalAccountId ??
+          body.data?.primaryAdAccountExternalId ??
           platform.primaryAdAccountExternalId ??
-          options[0]?.value ??
+          accountOptionsResult[0]?.value ??
           null
       );
     } catch (error) {
-      console.error('Error loading Meta ad accounts:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to load Meta ad accounts.');
+      console.error(`Error loading ${platform.platformName} accounts:`, error);
+      toast.error(error instanceof Error ? error.message : `Failed to load ${platform.platformName} accounts.`);
       setAccountSelectionPlatform(null);
     } finally {
       setLoadingAccountOptions(false);
@@ -430,7 +635,7 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
     setSubmittingAccountSelection(true);
 
     try {
-      const response = await fetch('/api/integrations/meta/select-ad-account', {
+      const response = await fetch(`/api/integrations/${accountSelectionPlatform.platformKey}/select-ad-account`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -443,19 +648,19 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
       const body = (await response.json().catch(() => ({}))) as MetaSelectResponse;
 
       if (!response.ok || !body?.success) {
-        throw new Error(body?.error?.userMessage || 'Failed to change Meta ad account');
+        throw new Error(body?.error?.userMessage || `Failed to change ${accountSelectionPlatform.platformName} account`);
       }
 
       toast.success(
         body.data?.firstSyncJob
-          ? 'Primary Meta ad account changed. Full history sync started.'
-          : 'Primary Meta ad account changed and sync started.'
+          ? `Primary ${accountSelectionPlatform.platformName} account changed. Full history sync started.`
+          : `Primary ${accountSelectionPlatform.platformName} account changed and sync started.`
       );
       setAccountSelectionPlatform(null);
       router.refresh();
     } catch (error) {
-      console.error('Error selecting Meta ad account:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to change Meta ad account.');
+      console.error(`Error selecting ${accountSelectionPlatform.platformName} account:`, error);
+      toast.error(error instanceof Error ? error.message : `Failed to change ${accountSelectionPlatform.platformName} account.`);
     } finally {
       setSubmittingAccountSelection(false);
     }
@@ -527,19 +732,19 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                         }
 
                         if (focusedPlatformConnected) {
-                          void handleRefreshConnections();
+                          void handleRefreshConnections(focusedPlatform.platformKey);
                           return;
                         }
 
-                        if (focusedPlatform.platformKey === 'meta') {
-                          void connectMeta();
-                        }
+                        connectPlatform(focusedPlatform, connectMeta);
                       }}
                       loading={
                         focusedPlatformConnected
                           ? refreshing
                           : focusedPlatform?.platformKey === 'meta'
                             ? connecting
+                            : focusedPlatform?.platformKey === 'google'
+                              ? connectingGoogle
                             : false
                       }
                       disabled={focusedPrimaryDisabled}
@@ -559,7 +764,7 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                       <Button
                         leftSection={
                           focusedPlatformConnected &&
-                          focusedPlatform.platformKey === 'meta' &&
+                          (focusedPlatform.platformKey === 'meta' || focusedPlatform.platformKey === 'google') &&
                           focusedPlatform.discoveredAdAccountCount > 1
                             ? <IconSettings size={16} />
                             : <IconArrowUpRight size={16} />
@@ -568,7 +773,7 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                         radius="xl"
                         onClick={() => {
                           if (
-                            focusedPlatform.platformKey === 'meta' &&
+                            (focusedPlatform.platformKey === 'meta' || focusedPlatform.platformKey === 'google') &&
                             focusedPlatformConnected &&
                             focusedPlatform.discoveredAdAccountCount > 1
                           ) {
@@ -584,7 +789,7 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                         }}
                       >
                         {focusedPlatformConnected &&
-                        focusedPlatform.platformKey === 'meta' &&
+                        (focusedPlatform.platformKey === 'meta' || focusedPlatform.platformKey === 'google') &&
                         focusedPlatform.discoveredAdAccountCount > 1
                           ? 'Change ad account'
                           : `View ${focusedPlatform.platformName}`}
@@ -806,7 +1011,7 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                   const palette = getIntegrationPlatformPalette(platform.platformKey);
                   const artwork = getIntegrationPlatformImage(platform.platformKey, platform.imageUrl);
                   const disconnected = !isIntegrationConnected(platform.status);
-                  const canConnectNow = platform.platformKey === 'meta' && disconnected;
+                  const canConnectNow = canPlatformConnectNow(platform);
                   const canManageLive = Boolean(platform.integrationId) && isIntegrationConnected(platform.status);
                   const platformError = platform.lastError;
                   const disconnecting = disconnectingPlatformId === platform.id;
@@ -876,7 +1081,7 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                             <Text fw={700} size="lg" style={{ color: palette.text }}>
                               {platform.platformName}
                             </Text>
-                            {!platform.integrationId && platform.platformKey !== 'meta' ? (
+                            {!platform.integrationId && platform.platformKey !== 'meta' && platform.platformKey !== 'google' ? (
                               <Badge color="gray" variant="light">
                                 Preview
                               </Badge>
@@ -942,12 +1147,12 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                                 <Button
                                   leftSection={<IconRefresh size={16} />}
                                   variant="light"
-                                  onClick={handleRefreshConnections}
+                                  onClick={() => void handleRefreshConnections(platform.platformKey)}
                                   loading={refreshing}
                                 >
                                   Refresh data
                                 </Button>
-                                {platform.platformKey === 'meta' &&
+                                {(platform.platformKey === 'meta' || platform.platformKey === 'google') &&
                                 platform.discoveredAdAccountCount > 1 ? (
                                   <Button
                                     variant="default"
@@ -962,11 +1167,13 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                               <Button
                                 leftSection={<IconLink size={16} />}
                                 onClick={() => {
-                                  void connectMeta();
+                                  connectPlatform(platform, connectMeta);
                                 }}
-                                loading={connecting}
+                                loading={platform.platformKey === 'meta' ? connecting : connectingGoogle}
                               >
-                                {integrationNeedsAttention(platform.status) ? 'Reconnect Meta' : 'Connect Meta'}
+                                {integrationNeedsAttention(platform.status)
+                                  ? `Reconnect ${platform.platformName}`
+                                  : `Connect ${platform.platformName}`}
                               </Button>
                             ) : (
                               <Button
@@ -1021,57 +1228,148 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
             </div>
 
             <Modal
+              opened={googleCredentialModalOpened}
+              onClose={() => {
+                if (!googleCredentialSaving) {
+                  setGoogleCredentialModalOpened(false);
+                }
+              }}
+              title="Google Ads credentials"
+              centered
+              size="lg"
+            >
+              <Stack gap="md">
+                <Alert color="blue" radius="lg" variant="light" icon={<IconLock size={16} />}>
+                  These credentials are saved for this workspace only. The client secret and developer token are stored in Vault and are not shown again.
+                </Alert>
+
+                <TextInput
+                  label="OAuth client ID"
+                  placeholder="1234567890-abc.apps.googleusercontent.com"
+                  value={googleClientId}
+                  onChange={(event) => setGoogleClientId(event.currentTarget.value)}
+                  disabled={googleCredentialSaving}
+                />
+
+                <PasswordInput
+                  label="OAuth client secret"
+                  placeholder="GOCSPX-..."
+                  value={googleClientSecret}
+                  onChange={(event) => setGoogleClientSecret(event.currentTarget.value)}
+                  disabled={googleCredentialSaving}
+                />
+
+                <PasswordInput
+                  label="Google Ads developer token"
+                  placeholder="Developer token from Google Ads API Center"
+                  value={googleDeveloperToken}
+                  onChange={(event) => setGoogleDeveloperToken(event.currentTarget.value)}
+                  disabled={googleCredentialSaving}
+                />
+
+                <TextInput
+                  label="Login customer ID"
+                  description="Optional manager/MCC customer ID. Use digits only or paste with dashes."
+                  placeholder="4556089496"
+                  value={googleLoginCustomerId}
+                  onChange={(event) => setGoogleLoginCustomerId(event.currentTarget.value)}
+                  disabled={googleCredentialSaving}
+                />
+
+                <TextInput
+                  label="OAuth scopes"
+                  value={googleScopes}
+                  onChange={(event) => setGoogleScopes(event.currentTarget.value)}
+                  disabled={googleCredentialSaving}
+                />
+
+                <Alert color="yellow" radius="lg" variant="light" icon={<IconAlertTriangle size={16} />}>
+                  Add this app callback URL to that Google Cloud OAuth client: {typeof window !== 'undefined' ? `${window.location.origin}/api/integrations/callback/google` : '/api/integrations/callback/google'}
+                </Alert>
+
+                <Group justify="flex-end" gap="sm">
+                  <Button
+                    variant="default"
+                    onClick={() => setGoogleCredentialModalOpened(false)}
+                    disabled={googleCredentialSaving}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={saveGoogleCredentialsAndConnect}
+                    loading={googleCredentialSaving}
+                    disabled={!googleClientId.trim() || !googleClientSecret.trim() || !googleDeveloperToken.trim()}
+                  >
+                    Save and connect
+                  </Button>
+                </Group>
+              </Stack>
+            </Modal>
+
+            <Modal
               opened={Boolean(accountSelectionPlatform)}
               onClose={() => {
                 if (!submittingAccountSelection) {
                   setAccountSelectionPlatform(null);
                 }
               }}
-              title="Change Meta ad account"
+              title={`Change ${accountSelectionPlatform?.platformName ?? 'ad'} account`}
               centered
             >
               <Stack gap="md">
-                <Text size="sm" c="dimmed">
-                  Choose which discovered Meta ad account DeepVisor should watch next. Saving this
-                  selection also starts sync for that account.
-                </Text>
+                {submittingAccountSelection ? (
+                  <>
+                    <Text size="sm" c="dimmed">
+                      DeepVisor is saving the selected {accountSelectionPlatform?.platformName ?? 'platform'} account and syncing recent campaign, ad group, ad, creative, and performance data.
+                    </Text>
+                    <Progress value={65} animated striped radius="xl" />
+                    <Alert color="blue" radius="lg" variant="light" icon={<IconClock size={16} />}>
+                      Keep this tab open until the sync finishes.
+                    </Alert>
+                  </>
+                ) : (
+                  <>
+                    <Text size="sm" c="dimmed">
+                      Choose which discovered {accountSelectionPlatform?.platformName ?? 'platform'} account DeepVisor should watch next. Saving this
+                      selection also starts sync for that account.
+                    </Text>
 
-                <Select
-                  label="Discovered Meta ad accounts"
-                  placeholder={loadingAccountOptions ? 'Loading ad accounts...' : 'Select one ad account'}
-                  data={accountOptions}
-                  value={selectedAccountExternalId}
-                  onChange={setSelectedAccountExternalId}
-                  disabled={loadingAccountOptions || submittingAccountSelection}
-                  searchable
-                  nothingFoundMessage="No discovered ad accounts found"
-                />
+                    <Select
+                      label={`Discovered ${accountSelectionPlatform?.platformName ?? 'platform'} accounts`}
+                      placeholder={loadingAccountOptions ? 'Loading ad accounts...' : 'Select one ad account'}
+                      data={accountOptions}
+                      value={selectedAccountExternalId}
+                      onChange={setSelectedAccountExternalId}
+                      disabled={loadingAccountOptions}
+                      searchable
+                      nothingFoundMessage="No discovered ad accounts found"
+                    />
 
-                {accountSelectionPlatform ? (
-                  <Text size="sm" c="dimmed">
-                    Current primary account:{' '}
-                    {accountSelectionPlatform.primaryAdAccountName ||
-                      accountSelectionPlatform.primaryAdAccountExternalId ||
-                      'Not selected yet'}
-                  </Text>
-                ) : null}
+                    {accountSelectionPlatform ? (
+                      <Text size="sm" c="dimmed">
+                        Current primary account:{' '}
+                        {accountSelectionPlatform.primaryAdAccountName ||
+                          accountSelectionPlatform.primaryAdAccountExternalId ||
+                          'Not selected yet'}
+                      </Text>
+                    ) : null}
 
-                <Group justify="flex-end" gap="sm">
-                  <Button
-                    variant="default"
-                    onClick={() => setAccountSelectionPlatform(null)}
-                    disabled={submittingAccountSelection}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleSelectAdAccount}
-                    loading={submittingAccountSelection}
-                    disabled={!selectedAccountExternalId || loadingAccountOptions}
-                  >
-                    Save and sync account
-                  </Button>
-                </Group>
+                    <Group justify="flex-end" gap="sm">
+                      <Button
+                        variant="default"
+                        onClick={() => setAccountSelectionPlatform(null)}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleSelectAdAccount}
+                        disabled={!selectedAccountExternalId || loadingAccountOptions}
+                      >
+                        Save and sync account
+                      </Button>
+                    </Group>
+                  </>
+                )}
               </Stack>
             </Modal>
 
@@ -1087,9 +1385,9 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                   const palette = getIntegrationPlatformPalette(selectedPlatform.platformKey);
                   const disconnecting = disconnectingPlatformId === selectedPlatform.id;
                   const connected = isIntegrationConnected(selectedPlatform.status);
-                  const canConnectNow = selectedPlatform.platformKey === 'meta' && !connected;
-                  const canChangeMetaAccount =
-                    selectedPlatform.platformKey === 'meta' &&
+                  const canConnectNow = canPlatformConnectNow(selectedPlatform);
+                  const canChangeAccount =
+                    (selectedPlatform.platformKey === 'meta' || selectedPlatform.platformKey === 'google') &&
                     connected &&
                     selectedPlatform.discoveredAdAccountCount > 1;
 
@@ -1191,7 +1489,7 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                         </Paper>
                       </SimpleGrid>
 
-                      {selectedPlatform.platformKey === 'meta' && connected ? (
+                      {(selectedPlatform.platformKey === 'meta' || selectedPlatform.platformKey === 'google') && connected ? (
                         <div>
                           <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
                             Primary ad account
@@ -1201,7 +1499,7 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                               radius="xl"
                               variant="default"
                               onClick={
-                                canChangeMetaAccount
+                                canChangeAccount
                                   ? () => void handleOpenAccountSelection(selectedPlatform)
                                   : undefined
                               }
@@ -1215,7 +1513,7 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                                 ? `${selectedPlatform.discoveredAdAccountCount} discovered ad accounts can be switched and synced from here.`
                                 : selectedPlatform.discoveredAdAccountCount === 1
                                   ? 'Only one discovered ad account is currently available.'
-                                  : 'No saved Meta ad accounts have been discovered yet.'}
+                                  : `No saved ${selectedPlatform.platformName} accounts have been discovered yet.`}
                             </Text>
                           </Group>
                         </div>
@@ -1261,12 +1559,12 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                               <Button
                                 leftSection={<IconRefresh size={16} />}
                                 variant="light"
-                                onClick={handleRefreshConnections}
+                                onClick={() => void handleRefreshConnections(selectedPlatform.platformKey)}
                                 loading={refreshing}
                               >
                                 Refresh data
                               </Button>
-                              {canChangeMetaAccount ? (
+                              {canChangeAccount ? (
                                 <Button
                                   variant="default"
                                   onClick={() => void handleOpenAccountSelection(selectedPlatform)}
@@ -1289,11 +1587,13 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                             <Button
                               leftSection={<IconLink size={16} />}
                               onClick={() => {
-                                void connectMeta();
+                                connectPlatform(selectedPlatform, connectMeta);
                               }}
-                              loading={connecting}
+                              loading={selectedPlatform.platformKey === 'meta' ? connecting : connectingGoogle}
                             >
-                              {integrationNeedsAttention(selectedPlatform.status) ? 'Reconnect Meta' : 'Connect Meta'}
+                              {integrationNeedsAttention(selectedPlatform.status)
+                                ? `Reconnect ${selectedPlatform.platformName}`
+                                : `Connect ${selectedPlatform.platformName}`}
                             </Button>
                           ) : (
                             <Button

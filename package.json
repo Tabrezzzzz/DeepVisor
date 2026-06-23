@@ -6,8 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "lint:fix": "next lint --fix",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "types:supabase": "npx supabase gen types typescript --linked --schema public,ai > src/lib/shared/types/supabase.ts"
   },
   "dependencies": {
@@ -59,6 +59,7 @@
     "embla-carousel-react": "^8.6.0",
     "facebook-nodejs-business-sdk": "^21.0.5",
     "framer-motion": "^11.18.0",
+    "google-ads-api": "^24.1.0",
     "googleapis": "^144.0.0",
     "ioredis": "^5.6.1",
     "lru-cache": "^11.0.2",

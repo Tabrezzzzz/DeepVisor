@@ -1,4 +1,4 @@
-export type SupportedIntegrationPlatform = 'meta';
+export type SupportedIntegrationPlatform = 'meta' | 'google';
 
 export type IntegrationStatus = 'connected' | 'disconnected' | 'needs_reauth' | 'error';
 

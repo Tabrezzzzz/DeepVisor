@@ -3,18 +3,24 @@ import { createServerClient } from '@/lib/server/supabase/server';
 import { requireUserId } from '@/lib/server/actions/user/session';
 import { getOrCreateOrganizationBusinessContext } from '@/lib/server/actions/business/context';
 import { buildMetaOAuthUrl } from '@/lib/server/integrations/adapters/meta';
+import { buildGoogleOAuthUrl } from '@/lib/server/integrations/adapters/google';
 import {
   buildIntegrationResultPath,
   createOAuthState,
   getBaseUrl,
   parseSupportedIntegrationPlatform,
   resolvePlatformByKey,
+  resolveGoogleAdsCredentialsForBusiness,
   sanitizeReturnTo,
 } from '@/lib/server/integrations/service';
 
-function buildErrorRedirect(requestUrl: string, returnTo: '/onboarding' | '/integration') {
+function buildErrorRedirect(
+  requestUrl: string,
+  returnTo: '/onboarding' | '/integration',
+  platform: 'meta' | 'google' = 'meta'
+) {
   const baseUrl = getBaseUrl(requestUrl);
-  const path = buildIntegrationResultPath(returnTo, 'meta', 'error');
+  const path = buildIntegrationResultPath(returnTo, platform, 'error');
   return NextResponse.redirect(new URL(path, baseUrl));
 }
 
@@ -43,20 +49,29 @@ export async function GET(
       userId,
       businessId: businessContext.businessId,
       platformId: integrationPlatform.id,
+      returnTo,
     });
 
     const baseUrl = getBaseUrl(request.url);
     const callbackUrl = new URL(`/api/integrations/callback/${platformKey}`, baseUrl);
-    callbackUrl.searchParams.set('returnTo', returnTo);
+    const googleCredentials = platformKey === 'google'
+      ? await resolveGoogleAdsCredentialsForBusiness(supabase, businessContext.businessId)
+      : undefined;
 
-    const oauthUrl = buildMetaOAuthUrl({
-      state,
-      redirectUri: callbackUrl.toString(),
-    });
+    const oauthUrl = platformKey === 'google'
+      ? buildGoogleOAuthUrl({
+          state,
+          redirectUri: callbackUrl.toString(),
+          credentials: googleCredentials,
+        })
+      : buildMetaOAuthUrl({
+          state,
+          redirectUri: callbackUrl.toString(),
+        });
 
     return NextResponse.redirect(oauthUrl);
   } catch (error) {
     console.error('Error initiating integration OAuth:', error);
-    return buildErrorRedirect(request.url, returnTo);
+    return buildErrorRedirect(request.url, returnTo, platformKey ?? 'meta');
   }
 }

@@ -2,10 +2,12 @@ import 'server-only'
 
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { getForwardedOrigin } from '@/lib/server/http/origin';
 
 const PUBLIC_ROUTES = new Set([
     '/',
     '/features',
+    '/privacy',
     '/privacy-policy',
     '/terms-of-service',
 ]);
@@ -23,8 +25,8 @@ function redirectWithSupabaseCookies(
     supabaseResponse: NextResponse,
     pathname: string
 ) {
-    const url = request.nextUrl.clone();
-    url.pathname = pathname;
+    const url = new URL(pathname, getForwardedOrigin(request.headers, request.nextUrl.origin));
+    url.search = '';
     const response = NextResponse.redirect(url);
 
     supabaseResponse.cookies.getAll().forEach((cookie) => {
@@ -75,15 +77,22 @@ export async function updateSession(request: NextRequest) {
     const isLoginPage = pathname.startsWith('/login');
     const isSignUpPage = pathname.startsWith('/sign-up');
     const isPublicRoute = PUBLIC_ROUTES.has(pathname);
+    const isServerActionRequest = request.headers.has('next-action');
+
+    if (isServerActionRequest) {
+        return supabaseResponse;
+    }
 
     // Handle unauthenticated user trying to access protected routes
     if (!user && !isLoginPage && !isSignUpPage && !isPublicRoute) {
         return redirectWithSupabaseCookies(request, supabaseResponse, '/login');
     }
 
-    // Handle authenticated user trying to access public pages  
+    // Handle authenticated user trying to access auth/public entry pages.
+    // Keep this redirect local to avoid an entry-page -> API redirect bounce loop
+    // if the browser retries /login while a valid session cookie is present.
     if (user && (isRootPage || isLoginPage || isSignUpPage)) {
-        return redirectWithSupabaseCookies(request, supabaseResponse, '/api/auth/redirect');
+        return redirectWithSupabaseCookies(request, supabaseResponse, '/onboarding');
     }
 
 
