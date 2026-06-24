@@ -2035,37 +2035,79 @@ export type Database = {
           ad_account_id: string | null
           business_id: string | null
           created_at: string
+          created_by_user_id: string | null
+          description: string
+          destination_href: string | null
+          duration_minutes: number
+          end_date: string | null
           id: string
           is_enabled: boolean
           item_type: string
+          monthly_day: number | null
           payload_json: Json
+          platform_integration_id: string | null
+          recurrence_type: string
+          start_date: string
+          status: string
           template_key: string
+          template_type: string
+          time_of_day: string
           title: string
           updated_at: string
+          updated_by_user_id: string | null
+          weekdays: number[]
         }
         Insert: {
           ad_account_id?: string | null
           business_id?: string | null
           created_at?: string
+          created_by_user_id?: string | null
+          description?: string
+          destination_href?: string | null
+          duration_minutes?: number
+          end_date?: string | null
           id?: string
           is_enabled?: boolean
           item_type?: string
+          monthly_day?: number | null
           payload_json?: Json
+          platform_integration_id?: string | null
+          recurrence_type?: string
+          start_date?: string
+          status?: string
           template_key: string
+          template_type?: string
+          time_of_day?: string
           title: string
           updated_at?: string
+          updated_by_user_id?: string | null
+          weekdays?: number[]
         }
         Update: {
           ad_account_id?: string | null
           business_id?: string | null
           created_at?: string
+          created_by_user_id?: string | null
+          description?: string
+          destination_href?: string | null
+          duration_minutes?: number
+          end_date?: string | null
           id?: string
           is_enabled?: boolean
           item_type?: string
+          monthly_day?: number | null
           payload_json?: Json
+          platform_integration_id?: string | null
+          recurrence_type?: string
+          start_date?: string
+          status?: string
           template_key?: string
+          template_type?: string
+          time_of_day?: string
           title?: string
           updated_at?: string
+          updated_by_user_id?: string | null
+          weekdays?: number[]
         }
         Relationships: [
           {
@@ -2080,6 +2122,13 @@ export type Database = {
             columns: ["business_id"]
             isOneToOne: false
             referencedRelation: "business_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_queue_templates_platform_integration_id_fkey"
+            columns: ["platform_integration_id"]
+            isOneToOne: false
+            referencedRelation: "platform_integrations"
             referencedColumns: ["id"]
           },
         ]
