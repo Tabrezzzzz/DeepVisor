@@ -43,3 +43,5 @@ next-env.d.ts
 
 public/custom.pass/pass.json
 
+.vercel
+.env.local

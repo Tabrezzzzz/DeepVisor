@@ -2330,24 +2330,59 @@ export type Database = {
       }
       notification_preferences: {
         Row: {
+          business_id: string | null
           created_at: string
+          email_enabled: boolean
+          id: string
+          in_app_enabled: boolean
+          min_severity: string
           preferences_json: Json
+          quiet_hours_end: number | null
+          quiet_hours_start: number | null
+          report_ready_enabled: boolean
+          time_zone: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
+          business_id?: string | null
           created_at?: string
+          email_enabled?: boolean
+          id?: string
+          in_app_enabled?: boolean
+          min_severity?: string
           preferences_json?: Json
+          quiet_hours_end?: number | null
+          quiet_hours_start?: number | null
+          report_ready_enabled?: boolean
+          time_zone?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
+          business_id?: string | null
           created_at?: string
+          email_enabled?: boolean
+          id?: string
+          in_app_enabled?: boolean
+          min_severity?: string
           preferences_json?: Json
+          quiet_hours_end?: number | null
+          quiet_hours_start?: number | null
+          report_ready_enabled?: boolean
+          time_zone?: string | null
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "notification_preferences_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "business_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       notifications: {
         Row: {
