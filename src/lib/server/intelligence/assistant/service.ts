@@ -108,7 +108,7 @@ async function getBestCreativeAnswer(
 ): Promise<string> {
   const { data: summaryRows, error: summaryError } = await (supabase as any)
     .from('ad_performance_summary')
-    .select('ad_id, adset_id, campaign_id, spend, impressions, clicks, leads, messages, calls, ctr, cost_per_result')
+    .select('ad_id:entity_id, adset_id, campaign_id, spend, impressions, clicks, leads, messages, calls, ctr, cost_per_result')
     .eq('ad_account_id', input.adAccountId);
 
   if (summaryError) {

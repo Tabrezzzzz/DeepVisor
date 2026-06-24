@@ -180,8 +180,8 @@ async function listPerformanceRows(
   for (const adIdsChunk of chunkArray(adIds, 200)) {
     const { data, error } = await supabase
       .from('ad_performance_summary')
-      .select('ad_id, spend, leads, messages, calls, clicks, impressions, ctr, cost_per_result, first_day, last_day')
-      .in('ad_id', adIdsChunk);
+      .select('ad_id:entity_id, spend, leads, messages, calls, clicks, impressions, ctr, cost_per_result, first_day, last_day')
+      .in('entity_id', adIdsChunk);
 
     if (error) {
       throw error;

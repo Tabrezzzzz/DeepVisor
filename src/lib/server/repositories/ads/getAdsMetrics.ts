@@ -115,9 +115,9 @@ async function listAdPerformanceRows(input: {
     const { data, error } = await input.supabase
       .from('ad_performance_summary')
       .select(
-        'ad_id, spend, reach, impressions, clicks, inline_link_clicks, leads, messages, first_day, last_day'
+        'ad_id:entity_id, spend, reach, impressions, clicks, inline_link_clicks, leads, messages, first_day, last_day'
       )
-      .in('ad_id', adIdsChunk);
+      .in('entity_id', adIdsChunk);
 
     if (error) {
       throw error;
