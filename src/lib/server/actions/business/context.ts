@@ -1,6 +1,6 @@
 "use server";
 
-import { unstable_cache } from 'next/cache';
+import { revalidateTag, unstable_cache } from 'next/cache';
 import { redirect, unstable_rethrow } from 'next/navigation';
 import { createAdminClient } from '@/lib/server/supabase/admin';
 import { createServerClient } from '@/lib/server/supabase/server';
@@ -230,18 +230,17 @@ function firstJoinedBusinessProfile(value: JoinedBusinessProfileRow | undefined)
 }
 
 export async function getExistingOrganizationBusinessContext(
-  userId: string
+  userId: string,
+  selectedOrganizationId?: string | null
 ): Promise<ExistingBusinessContextResult> {
   const timer = createServerTimer('context', { enabledEnvVar: 'CONTEXT_TIMING' });
   const supabase = timer.measureSync('create admin client: business context', createAdminClient);
 
-  const { data: membership, error: membershipError } = await timer.measure(
-    'membership org business query',
-    () =>
-      supabase
-        .from('organization_memberships')
-        .select(
-          `
+  async function loadMembership(organizationId?: string | null) {
+    let query = supabase
+      .from('organization_memberships')
+      .select(
+        `
           organization_id,
           role,
           organizations!organization_memberships_org_fkey (
@@ -255,11 +254,32 @@ export async function getExistingOrganizationBusinessContext(
             )
           )
         `
-        )
-        .eq('user_id', userId)
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle()
+      )
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    if (organizationId) {
+      query = query.eq('organization_id', organizationId);
+    }
+
+    return query.maybeSingle();
+  }
+
+  const { data: membership, error: membershipError } = await timer.measure(
+    'membership org business query',
+    async () => {
+      const selected = await loadMembership(selectedOrganizationId);
+
+      if (selected.error || selected.data || !selectedOrganizationId) {
+        return selected;
+      }
+
+      // If a stale cookie points at an organization the user cannot access, fall
+      // back to the first accessible membership instead of leaking whether that
+      // organization exists.
+      return loadMembership(null);
+    }
   );
 
   if (membershipError) {
@@ -317,10 +337,19 @@ function isBusinessContextCacheMiss(error: unknown): boolean {
   );
 }
 
-function getCachedFoundOrganizationBusinessContext(userId: string) {
+function organizationBusinessContextTag(userId: string, selectedOrganizationId?: string | null) {
+  return `organization-business-context:${userId}:${selectedOrganizationId ?? 'primary'}`;
+}
+
+export async function invalidateOrganizationBusinessContext(userId: string, selectedOrganizationId?: string | null) {
+  revalidateTag(organizationBusinessContextTag(userId, selectedOrganizationId), 'max');
+  revalidateTag(organizationBusinessContextTag(userId, null), 'max');
+}
+
+function getCachedFoundOrganizationBusinessContext(userId: string, selectedOrganizationId?: string | null) {
   return unstable_cache(
     async () => {
-      const existing = await getExistingOrganizationBusinessContext(userId);
+      const existing = await getExistingOrganizationBusinessContext(userId, selectedOrganizationId);
 
       if (existing.kind === 'found') {
         return existing.context;
@@ -328,25 +357,27 @@ function getCachedFoundOrganizationBusinessContext(userId: string) {
 
       throw new Error(`organization-business-context-cache-miss:${existing.kind}`);
     },
-    ['organization-business-context', userId],
+    ['organization-business-context', userId, selectedOrganizationId ?? 'primary'],
     {
+      tags: [organizationBusinessContextTag(userId, selectedOrganizationId)],
       revalidate: 30,
     }
   )();
 }
 
 export async function getCachedOrganizationBusinessContext(
-  userId: string
+  userId: string,
+  selectedOrganizationId?: string | null
 ): Promise<OrganizationBusinessContext> {
   try {
-    return await getCachedFoundOrganizationBusinessContext(userId);
+    return await getCachedFoundOrganizationBusinessContext(userId, selectedOrganizationId);
   } catch (error) {
     if (!isBusinessContextCacheMiss(error)) {
       throw error;
     }
   }
 
-  return getOrCreateOrganizationBusinessContext(userId);
+  return getOrCreateOrganizationBusinessContext(userId, selectedOrganizationId);
 }
 
 /**
@@ -357,11 +388,12 @@ export async function getCachedOrganizationBusinessContext(
  * @returns The normalized organization + business context used throughout the app.
  */
 export async function getOrCreateOrganizationBusinessContext(
-  userId: string
+  userId: string,
+  selectedOrganizationId?: string | null
 ): Promise<OrganizationBusinessContext> {
   const timer = createServerTimer('context', { enabledEnvVar: 'CONTEXT_TIMING' });
   const existing = await timer.measure('existing organization business context', () =>
-    getExistingOrganizationBusinessContext(userId)
+    getExistingOrganizationBusinessContext(userId, selectedOrganizationId)
   );
 
   if (existing.kind === 'found') {

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireUserId } from '@/lib/server/actions/user/session';
-import { getOrCreateOrganizationBusinessContext } from '@/lib/server/actions/business/context';
+import { getRequiredAppContext } from '@/lib/server/actions/app/context';
+import { logAuditEvent } from '@/lib/server/audit/logAuditEvent';
 import {
   exchangeMetaCodeForToken,
+  fetchMetaUserId,
   fetchMetaAdAccountSnapshots,
-  validateMetaAccessToken,
 } from '@/lib/server/integrations/adapters/meta';
 import {
   exchangeGoogleCodeForToken,
@@ -24,6 +24,7 @@ import {
 } from '@/lib/server/integrations/service';
 import { discoverMetaAdAccounts } from '@/lib/server/sync/meta/discoverMetaAdAccounts';
 import { discoverGoogleAdAccounts } from '@/lib/server/sync/google/discoverGoogleAdAccounts';
+import { consumeRateLimit, rateLimitResponse } from '@/lib/server/security/rateLimit';
 import { createAdminClient } from '@/lib/server/supabase/admin';
 import type { SupportedIntegrationPlatform } from '@/lib/shared/types/integrations';
 
@@ -110,8 +111,18 @@ export async function GET(
 
   try {
     const supabase = createAdminClient();
-    const userId = await requireUserId();
-    const businessContext = await getOrCreateOrganizationBusinessContext(userId);
+    const businessContext = await getRequiredAppContext(false);
+    const userId = businessContext.user.id;
+    const limiter = await consumeRateLimit({
+      identifier: `user:${userId}:business:${businessContext.businessId}`,
+      action: `integration.callback.${platformKey}`,
+      limit: 20,
+      windowSeconds: 60 * 60,
+    });
+
+    if (!limiter.allowed) {
+      return rateLimitResponse(limiter);
+    }
 
     const integrationPlatform = await resolvePlatformByKey(supabase, platformKey);
     if (!integrationPlatform) {
@@ -146,13 +157,15 @@ export async function GET(
           redirectUri: redirectUri.toString(),
         });
 
+    let metaUserId: string | null = null;
+
     if (platformKey === 'google') {
       if (!token.refresh_token) {
         throw new Error('Google did not return a refresh token. Reconnect and approve offline access.');
       }
       await validateGoogleRefreshToken(token.refresh_token, googleCredentials);
     } else {
-      await validateMetaAccessToken(token.access_token);
+      metaUserId = await fetchMetaUserId(token.access_token);
     }
 
     integrationId = await upsertPlatformIntegration(supabase, {
@@ -170,7 +183,23 @@ export async function GET(
         expires_in: token.expires_in,
         scopes: token.scope ? token.scope.split(/\s+/).filter(Boolean) : undefined,
         issued_at: new Date().toISOString(),
+        provider_user_id: metaUserId,
       },
+    });
+
+    await logAuditEvent(supabase, {
+      businessId: businessContext.businessId,
+      organizationId: businessContext.organizationId,
+      actorUserId: userId,
+      eventType: 'integration.connected',
+      resourceType: 'platform_integration',
+      resourceId: integrationId,
+      platformIntegrationId: integrationId,
+      metadata: {
+        platform: platformKey,
+      },
+      ipAddress: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      userAgent: request.headers.get('user-agent'),
     });
 
     let accessibleAccounts;

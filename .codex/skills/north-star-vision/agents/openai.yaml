@@ -1,0 +1,4 @@
+interface:
+  display_name: "North Star Vision"
+  short_description: "Help with North Star Vision tasks"
+  default_prompt: "Use (north-star-vision.Name) to handle this task."

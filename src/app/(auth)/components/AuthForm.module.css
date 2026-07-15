@@ -1,75 +1,104 @@
-.loginShell {
-  position: relative;
-  min-height: calc(100vh - 112px);
+.loginShell,
+.signupShell {
+  min-height: calc(100vh - 98px);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(380px, 480px);
-  gap: 28px;
+  grid-template-columns: minmax(0, 0.95fr) minmax(420px, 0.72fr);
+  gap: 18px;
   align-items: stretch;
-  padding: 28px;
-  overflow: hidden;
+  padding: 22px;
   background:
-    radial-gradient(circle at 10% 10%, rgba(37, 99, 235, 0.14), transparent 30%),
-    radial-gradient(circle at 86% 8%, rgba(52, 168, 83, 0.13), transparent 24%),
-    radial-gradient(circle at 62% 94%, rgba(245, 158, 11, 0.13), transparent 26%),
-    linear-gradient(135deg, #fbfdff 0%, #f3f8ff 44%, #f8fbf7 100%);
+    linear-gradient(90deg, rgba(253, 75, 35, 0.055) 0 1px, transparent 1px),
+    linear-gradient(0deg, rgba(253, 75, 35, 0.045) 0 1px, transparent 1px),
+    #f4f4f1;
+  background-size: 32px 32px;
 }
 
-.loginCard {
-  align-self: center;
-  min-height: 560px;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  border-color: rgba(37, 99, 235, 0.16);
+.loginIntro,
+.signupIntro,
+.loginCard,
+.flowCard {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.94);
-  backdrop-filter: blur(20px);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.08);
 }
 
-.loginIntro {
+.loginIntro,
+.signupIntro {
   position: relative;
-  min-height: 560px;
   display: flex;
+  min-height: 620px;
   flex-direction: column;
   justify-content: center;
-  padding: clamp(26px, 5vw, 72px);
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 32px;
   overflow: hidden;
-  color: #071c3a;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.62)),
-    radial-gradient(circle at 24% 22%, rgba(59, 130, 246, 0.23), transparent 28%),
-    radial-gradient(circle at 78% 32%, rgba(16, 185, 129, 0.18), transparent 24%),
-    radial-gradient(circle at 36% 80%, rgba(245, 158, 11, 0.17), transparent 26%);
-  box-shadow: 0 28px 90px rgba(15, 23, 42, 0.11);
+  padding: clamp(32px, 6vw, 84px);
 }
 
-.loginIntro .animatedWelcome {
-  font-size: clamp(3.5rem, 8.6vw, 8rem);
+.loginCard,
+.flowCard {
+  align-self: center;
+  display: flex;
+  min-height: 560px;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(24px, 4vw, 42px) !important;
+}
+
+.authBadge {
+  width: fit-content;
+  margin-bottom: 18px;
+  border: 1px solid rgba(253, 75, 35, 0.24);
+  background: rgba(253, 75, 35, 0.1);
+  color: #fd4b23;
+}
+
+.introTitle {
+  position: relative;
+  z-index: 1;
+  max-width: 760px;
+  margin-top: 0;
+  color: #070707;
+  font-size: clamp(3rem, 6.8vw, 6.6rem);
+  line-height: 0.92;
+  letter-spacing: -0.06em;
+}
+
+.introCopy {
+  position: relative;
+  z-index: 1;
+  max-width: 640px;
+  margin-top: 22px;
+  color: rgba(0, 0, 0, 0.62);
+  font-size: clamp(1rem, 1.6vw, 1.2rem);
+  line-height: 1.65;
 }
 
 .loginMetricGrid {
-  max-width: 680px;
+  position: relative;
+  z-index: 1;
+  max-width: 690px;
   margin-top: 30px;
 }
 
+.loginMetric,
+.trustItem,
+.choiceButton {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
 .loginMetric {
-  min-height: 82px;
+  min-height: 92px;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 6px;
-  padding: 16px;
-  border: 1px solid rgba(37, 99, 235, 0.12);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.72);
-  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.06);
-  backdrop-filter: blur(14px);
+  gap: 8px;
+  padding: 18px;
 }
 
 .loginMetric span {
-  color: #64748b;
+  color: rgba(0, 0, 0, 0.48);
   font-size: 0.68rem;
   font-weight: 900;
   letter-spacing: 0.16em;
@@ -77,266 +106,131 @@
 }
 
 .loginMetric strong {
-  color: #0f172a;
-  font-size: 0.95rem;
-  line-height: 1.25;
-}
-
-.signupShell {
-  position: relative;
-  min-height: calc(100vh - 112px);
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(420px, 560px);
-  gap: 28px;
-  align-items: stretch;
-  padding: 28px;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at 12% 14%, rgba(37, 99, 235, 0.16), transparent 28%),
-    radial-gradient(circle at 80% 20%, rgba(236, 72, 153, 0.16), transparent 30%),
-    linear-gradient(135deg, #f8fbff 0%, #eef6ff 46%, #fff8fb 100%);
-}
-
-.signupIntro {
-  position: relative;
-  min-height: 620px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: clamp(26px, 5vw, 74px);
-  border-radius: 32px;
-  overflow: hidden;
-  color: #071c3a;
-  background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.58)),
-    radial-gradient(circle at 28% 24%, rgba(59, 130, 246, 0.22), transparent 28%),
-    radial-gradient(circle at 72% 36%, rgba(16, 185, 129, 0.18), transparent 26%),
-    radial-gradient(circle at 38% 78%, rgba(249, 115, 22, 0.17), transparent 26%);
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  box-shadow: 0 28px 90px rgba(15, 23, 42, 0.12);
-}
-
-.salonBadge {
-  width: fit-content;
-  margin-bottom: 28px;
-  border: 1px solid rgba(37, 99, 235, 0.16);
-}
-
-.animatedWelcome {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  font-size: clamp(3.8rem, 9vw, 8.6rem);
-  line-height: 0.86;
-  font-weight: 950;
-  letter-spacing: 0;
-}
-
-.animatedWelcome span {
-  display: inline-block;
-  color: transparent;
-  background:
-    linear-gradient(
-      120deg,
-      #2563eb,
-      #06b6d4,
-      #22c55e,
-      #f97316,
-      #ec4899,
-      #2563eb
-    );
-  background-size: 360% 100%;
-  background-clip: text;
-  -webkit-background-clip: text;
-  animation:
-    welcomeWave 2.8s ease-in-out infinite,
-    welcomeColor 5s linear infinite;
-  animation-delay: calc(var(--letter-index) * 90ms), 0ms;
-  filter: drop-shadow(0 12px 22px rgba(37, 99, 235, 0.12));
-}
-
-.introTitle {
-  max-width: 720px;
-  margin-top: 22px;
-  font-size: clamp(2rem, 4vw, 4.4rem);
-  line-height: 1;
-  letter-spacing: 0;
-}
-
-.introCopy {
-  max-width: 660px;
-  margin-top: 20px;
-  font-size: clamp(1.02rem, 2vw, 1.28rem);
-  line-height: 1.7;
-  color: #475569;
+  color: #080808;
+  font-size: 1rem;
 }
 
 .colorOrbit {
-  position: absolute;
-  inset: auto 34px 34px auto;
-  width: 190px;
-  height: 190px;
-  pointer-events: none;
-}
-
-.colorOrbit span {
-  position: absolute;
-  border-radius: 999px;
-  opacity: 0.78;
-  animation: orbitFloat 7s ease-in-out infinite;
-}
-
-.colorOrbit span:nth-child(1) {
-  width: 88px;
-  height: 88px;
-  top: 12px;
-  left: 18px;
-  background: #60a5fa;
-}
-
-.colorOrbit span:nth-child(2) {
-  width: 72px;
-  height: 72px;
-  top: 78px;
-  right: 10px;
-  background: #fb7185;
-  animation-delay: -1.6s;
-}
-
-.colorOrbit span:nth-child(3) {
-  width: 54px;
-  height: 54px;
-  bottom: 4px;
-  left: 56px;
-  background: #34d399;
-  animation-delay: -3.2s;
-}
-
-.flowCard {
-  align-self: center;
-  min-height: 620px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  border-color: rgba(148, 163, 184, 0.24);
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(20px);
+  display: none;
 }
 
 .backButton {
   width: fit-content;
-  margin-bottom: -6px;
+  margin-bottom: -4px;
 }
 
 .choiceButton {
-  min-height: 72px;
+  min-height: 84px;
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.36);
-  border-radius: 18px;
-  background: #ffffff;
-  color: #0f172a;
+  padding: 18px;
+  color: #080808;
   text-align: left;
-  font-weight: 800;
+  font-weight: 850;
   line-height: 1.25;
   cursor: pointer;
-  transition:
-    transform 160ms ease,
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    background 160ms ease;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
 }
 
 .choiceButton:hover,
-.choiceButton:focus-visible {
-  transform: translateY(-2px);
-  border-color: rgba(37, 99, 235, 0.44);
-  box-shadow: 0 14px 32px rgba(37, 99, 235, 0.12);
-  outline: none;
-}
-
+.choiceButton:focus-visible,
 .choiceButtonSelected {
-  border-color: rgba(37, 99, 235, 0.78);
-  background: linear-gradient(135deg, rgba(239, 246, 255, 0.96), rgba(236, 253, 245, 0.84));
-  color: #0b3b83;
+  border-color: #fd4b23;
+  background: rgba(253, 75, 35, 0.1);
+  color: #080808;
+  outline: none;
+  transform: translateY(-1px);
 }
 
 .trustItem {
-  min-height: 58px;
+  min-height: 66px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 16px;
-  background: rgba(248, 250, 252, 0.9);
+  gap: 12px;
+  padding: 16px;
+}
+
+.googlePrimaryButton,
+.authPrimaryButton {
+  min-height: 48px;
+  border-radius: 10px;
+  font-weight: 850;
 }
 
 .googlePrimaryButton {
-  min-height: 46px;
-  border: 1px solid rgba(15, 23, 42, 0.16);
-  background: #ffffff;
-  color: #0f172a;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  background: #fff;
+  color: #080808;
 }
 
 .googlePrimaryButton:hover {
-  background: #f8fafc;
-  border-color: rgba(37, 99, 235, 0.34);
-  color: #0f172a;
+  border-color: #fd4b23;
+  background: rgba(253, 75, 35, 0.06);
+  color: #080808;
 }
 
 .authPrimaryButton {
-  min-height: 46px;
-  background: linear-gradient(135deg, #2563eb, #1877f2 52%, #0f766e);
-  box-shadow: 0 16px 36px rgba(37, 99, 235, 0.22);
+  background: #fd4b23;
+  box-shadow: none;
 }
 
 .authPrimaryButton:hover {
-  background: linear-gradient(135deg, #1d4ed8, #0f5fcc 52%, #0f766e);
+  background: #de3514;
 }
 
-@keyframes welcomeWave {
-  0%,
-  100% {
-    transform: translateY(0) rotate(0deg);
-  }
-
-  45% {
-    transform: translateY(-12px) rotate(-1.5deg);
-  }
+:global(.dark) .loginShell,
+:global(.dark) .signupShell {
+  background:
+    linear-gradient(90deg, rgba(253, 75, 35, 0.08) 0 1px, transparent 1px),
+    linear-gradient(0deg, rgba(253, 75, 35, 0.07) 0 1px, transparent 1px),
+    #090909;
 }
 
-@keyframes welcomeColor {
-  0% {
-    background-position: 0% 50%;
-  }
-
-  100% {
-    background-position: 360% 50%;
-  }
+:global(.dark) .loginIntro,
+:global(.dark) .signupIntro,
+:global(.dark) .loginCard,
+:global(.dark) .flowCard,
+:global(.dark) .loginMetric,
+:global(.dark) .trustItem,
+:global(.dark) .choiceButton {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.065);
+  box-shadow: none;
 }
 
-@keyframes orbitFloat {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0) scale(1);
-  }
+:global(.dark) .introTitle,
+:global(.dark) .loginMetric strong,
+:global(.dark) .choiceButton {
+  color: #f8f8f3;
+}
 
-  50% {
-    transform: translate3d(10px, -16px, 0) scale(1.06);
-  }
+:global(.dark) .introCopy,
+:global(.dark) .loginMetric span {
+  color: rgba(248, 248, 243, 0.64);
+}
+
+:global(.dark) .googlePrimaryButton {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8f8f3;
+}
+
+:global(.dark) .choiceButton:hover,
+:global(.dark) .choiceButton:focus-visible,
+:global(.dark) .choiceButtonSelected,
+:global(.dark) .googlePrimaryButton:hover {
+  border-color: #fd4b23;
+  background: rgba(253, 75, 35, 0.16);
+  color: #fff;
 }
 
 @media (max-width: 1080px) {
   .loginShell,
   .signupShell {
     grid-template-columns: 1fr;
-    padding: 18px;
   }
 
   .loginIntro,
@@ -345,73 +239,26 @@
   .flowCard {
     min-height: auto;
   }
-
-  .loginIntro,
-  .signupIntro {
-    padding: 34px 24px 58px;
-  }
-
-  .colorOrbit {
-    width: 130px;
-    height: 130px;
-    right: 16px;
-    bottom: 14px;
-    transform: scale(0.72);
-    transform-origin: bottom right;
-  }
 }
 
 @media (max-width: 760px) {
-  .loginShell {
-    min-height: calc(100vh - 92px);
-    gap: 12px;
-    padding: 10px 10px 96px;
-  }
-
+  .loginShell,
   .signupShell {
-    min-height: calc(100vh - 92px);
     gap: 12px;
-    padding: 10px 10px 96px;
+    padding: 12px 12px 92px;
   }
 
   .loginIntro,
   .signupIntro {
-    border-radius: 24px;
-    padding: 28px 18px 52px;
-  }
-
-  .loginShell .animatedWelcome,
-  .animatedWelcome {
-    flex-wrap: nowrap;
-    gap: 0;
-    width: 100%;
-    overflow: visible;
-    white-space: nowrap;
-    font-size: clamp(2.75rem, 14.5vw, 4.15rem);
-  }
-
-  .animatedWelcome span {
-    flex: 0 0 auto;
+    padding: 28px 20px 88px;
   }
 
   .introTitle {
-    font-size: clamp(2rem, 12vw, 3.3rem);
-  }
-
-  .introCopy {
-    font-size: 1rem;
-    line-height: 1.55;
+    font-size: clamp(2.4rem, 13vw, 4rem);
   }
 
   .loginCard,
   .flowCard {
-    border-radius: 24px;
-    padding: 18px;
-  }
-
-  .choiceButton {
-    min-height: 58px;
-    border-radius: 15px;
-    padding: 13px 14px;
+    padding: 20px !important;
   }
 }

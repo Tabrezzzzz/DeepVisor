@@ -1,0 +1,46 @@
+name: Production checks
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      NEXT_PUBLIC_BASE_URL: http://localhost:3000
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+      SUPABASE_SERVICE_ROLE_KEY: placeholder-service-role-key
+      INTERNAL_API_KEY: placeholder-internal-api-key
+      META_APP_ID: placeholder-meta-app-id
+      META_APP_SECRET: placeholder-meta-app-secret
+      GOOGLE_ADS_CREDENTIAL_MODE: app
+      GOOGLE_ADS_CLIENT_ID: placeholder-google-client-id
+      GOOGLE_ADS_CLIENT_SECRET: placeholder-google-client-secret
+      GOOGLE_ADS_DEVELOPER_TOKEN: placeholder-google-developer-token
+      OPENAI_API_KEY: placeholder-openai-key
+      NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: placeholder-google-maps-key
+      STRIPE_SECRET_KEY: sk_test_placeholder
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify
+        run: npm run verify

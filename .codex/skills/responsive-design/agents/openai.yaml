@@ -1,0 +1,4 @@
+interface:
+  display_name: "Responsive Design"
+  short_description: "Help with Responsive Design tasks"
+  default_prompt: "Use (responsive-design.Name) to handle this task."

@@ -11,6 +11,13 @@ export type CampaignLifetimeRow = {
   spend: string;
   leads: number;
   messages: number;
+  conversions: number;
+  conversion_value: number;
+  cpa: string | null;
+  roas: string | null;
+  search_impression_share: string | null;
+  search_budget_lost_impression_share: string | null;
+  search_rank_lost_impression_share: string | null;
   reach: number;
   link_clicks: number;
   cpm: string | null;
@@ -46,6 +53,16 @@ export async function getCampaignLifetimeIncludingZeros(
     spend: campaign.spend.toFixed(2),
     leads: campaign.leads,
     messages: campaign.messages,
+    conversions: campaign.conversions,
+    conversion_value: campaign.conversionValue,
+    cpa: campaign.cpa != null ? campaign.cpa.toFixed(2) : null,
+    roas: campaign.roas != null ? campaign.roas.toFixed(2) : null,
+    search_impression_share:
+      campaign.searchImpressionShare != null ? campaign.searchImpressionShare.toFixed(2) : null,
+    search_budget_lost_impression_share:
+      campaign.searchBudgetLostImpressionShare != null ? campaign.searchBudgetLostImpressionShare.toFixed(2) : null,
+    search_rank_lost_impression_share:
+      campaign.searchRankLostImpressionShare != null ? campaign.searchRankLostImpressionShare.toFixed(2) : null,
     reach: campaign.reach,
     link_clicks: campaign.linkClicks,
     cpm: campaign.impressions > 0 ? campaign.cpm.toFixed(2) : null,

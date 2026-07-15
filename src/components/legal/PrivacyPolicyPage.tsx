@@ -7,12 +7,12 @@ export const privacyPolicyMetadata: Metadata = {
     'DeepVisor privacy policy covering account data, Meta integration data, AI processing, retention, data deletion, and user rights.',
 };
 
-const lastUpdated = 'June 20, 2026';
+const lastUpdated = 'July 10, 2026';
 
 const highlights = [
   'We do not sell personal information.',
   'Connected ad platform data is used to operate dashboards, reports, sync, and recommendations.',
-  'You can disconnect integrations and request deletion of account data.',
+  'You can disconnect integrations and request deletion of account data or connected platform data.',
 ];
 
 const sections = [
@@ -43,7 +43,8 @@ const sections = [
   {
     title: '4. Meta And Other Platform Integrations',
     body: [
-      'If you connect Meta or another advertising platform, DeepVisor processes data made available through that platform API and the permissions you grant. This may include business, page, Instagram, ad account, campaign, ad set, ad, creative, lead-related, and performance information depending on the permissions approved by the platform.',
+      'If you connect Meta or another advertising platform, DeepVisor processes data made available through that platform API and the permissions you grant. This platform data may include business, page, Instagram, ad account, campaign, ad set, ad, creative, lead-related, conversion, and performance information depending on the permissions approved by the platform.',
+      'We use connected platform data only to provide DeepVisor features such as account setup, sync, dashboards, reports, recommendations, calendar queues, approvals, exports, troubleshooting, and security. We do not sell Meta Platform Data or connected advertising platform data.',
       'You can disconnect an integration inside DeepVisor where available, or revoke access from the connected platform account settings. After disconnection, DeepVisor stops new sync activity for that integration, but previously stored records may remain until deleted under our retention process or by request.',
       'Third-party platforms are governed by their own terms and privacy policies. DeepVisor is not responsible for third-party platform availability, API changes, platform policy decisions, or data supplied by those platforms.',
     ],
@@ -73,6 +74,8 @@ const sections = [
     title: '8. Data Deletion',
     body: [
       'To request deletion of your DeepVisor account data or connected platform data, email info@deepvisor.com from the email address associated with your account. Include the workspace or business name if available.',
+      'For Meta data deletion callbacks, DeepVisor verifies the signed request, records a deletion request, returns a confirmation code and status URL, and then processes matching Meta-derived data under our deletion workflow.',
+      'Connected platform data deletion can include integration credentials, provider account identifiers, synced ad account records, campaign/ad/ad set structure, creative metadata, lead records where applicable, reports, generated intelligence, sync state, and cached platform payloads where they can be matched to the requesting user or authorized workspace.',
       'We may need to retain limited records where required for security, fraud prevention, legal compliance, accounting, dispute resolution, or backup integrity. Deleted integration credentials are no longer used for platform API access.',
     ],
   },

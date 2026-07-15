@@ -1,0 +1,4 @@
+interface:
+  display_name: "Illustration Style"
+  short_description: "Help with Illustration Style tasks"
+  default_prompt: "Use (illustration-style.Name) to handle this task."

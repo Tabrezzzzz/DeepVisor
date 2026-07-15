@@ -1,357 +1,130 @@
-'use client';
+"use client";
 
-import {
-    clientHandleSignOut,
-    markAllNotificationsAsReadClient,
-    markNotificationReadClient,
-} from '@/lib/client';
-import {
-    formatNotificationPreviewMessage,
-    formatRelativeTime,
-    type NotificationFeedItem,
-} from '@/lib/shared';
-import {
-    Group,
-    TextInput,
-    Avatar,
-    Text,
-    Menu,
-    UnstyledButton,
-    rem,
-    Box,
-    Divider,
-    ActionIcon,
-    Button,
-    Indicator
-} from '@mantine/core';
-import {
-    IconSearch,
-    IconChevronDown,
-    IconLogout,
-    IconSettings,
-    IconUser,
-    IconHelp,
-    IconBell,
-    IconPlus,
-} from '@tabler/icons-react';
-import { useRouter } from 'next/navigation';
-import { useState, useEffect } from 'react';
-import PlatformAdAccountDropdownClient from './PlatformAdAccountDropdownClient';
+import { usePathname, useRouter } from "next/navigation";
+import { Avatar, Menu } from "@mantine/core";
+import { Bell, ChevronDown, LogOut, Plus, Search, User } from "lucide-react";
+import { clientHandleSignOut } from "@/lib/client";
+import type { NotificationFeedItem } from "@/lib/shared";
+import PlatformAdAccountDropdownClient from "./PlatformAdAccountDropdownClient";
+import WorkspaceSwitcherClient from "./WorkspaceSwitcherClient";
+import ThemeToggle from "../ThemeToggle";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+type TopBarClientProps = {
+  userInfo: any;
+  businessId: string;
+  platforms?: any[];
+  adAccounts?: any[];
+  notifications?: NotificationFeedItem[];
+  initialPlatformId?: string | null;
+  initialAccountId?: string | null;
+};
 
-interface TopBarClientProps {
-    userInfo: any;
-    platforms?: any[];
-    adAccounts?: any[];
-    notifications?: NotificationFeedItem[];
-    initialPlatformId?: string | null;
-    initialAccountId?: string | null;
-}
-/* eslint-enable @typescript-eslint/no-explicit-any */
+const pageTitles: Record<string, string> = {
+  dashboard: "Overview",
+  campaigns: "Campaigns",
+  leads: "Leads",
+  insights: "Insights",
+  reports: "Reports",
+  calendar: "Calendar",
+  notifications: "Approvals",
+  settings: "Settings",
+  integration: "Connected platforms",
+};
 
 export default function TopBarClient({
-    userInfo,
-    platforms = [],
-    adAccounts = [],
-    notifications = [],
-    initialPlatformId,
-    initialAccountId
+  userInfo,
+  businessId,
+  platforms = [],
+  adAccounts = [],
+  notifications = [],
+  initialPlatformId,
+  initialAccountId,
 }: TopBarClientProps) {
-    const router = useRouter();
-    const [searchQuery, setSearchQuery] = useState('');
-    const [userNotifications, setUserNotifications] = useState<NotificationFeedItem[]>(notifications);
-    const [notificationCount, setNotificationCount] = useState(0);
+  const router = useRouter();
+  const pathname = usePathname();
+  const segment = pathname?.split("/").filter(Boolean)[0] ?? "dashboard";
+  const pageTitle = pageTitles[segment] ?? "Workspace";
+  const fullName =
+    `${userInfo?.first_name ?? ""} ${userInfo?.last_name ?? ""}`.trim() ||
+    "User";
+  const initials = fullName
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+  const unreadCount = notifications.filter((item) => !item.read).length;
 
-    // Calculate unread notification count
-    useEffect(() => {
-        setNotificationCount(userNotifications.filter(n => !n.read).length);
-    }, [userNotifications]);
+  return (
+    <div className="dv-topbar">
+      <div className="dv-topbar-left">
+        {/* <div>
+          <p className="dv-eyebrow">AI Performance Marketing Command Center</p>
+          <h1>{pageTitle}</h1>
+        </div> */}
+        <PlatformAdAccountDropdownClient
+          businessId={businessId}
+          platforms={platforms}
+          adAccounts={adAccounts}
+          initialPlatformId={initialPlatformId}
+          initialAccountId={initialAccountId}
+        />
+      </div>
 
-
-    const fullName = (userInfo?.first_name + ' ' + userInfo?.last_name).trim();
-    const userInitials = fullName.split(' ').map((name: string) => name[0]).join('').toUpperCase();
-    const accentColor = 'var(--platform-accent)';
-    const accentStrong = 'var(--platform-accent-strong)';
-    const accentSoft = 'var(--platform-accent-soft)';
-    const accentSoftStrong = 'var(--platform-accent-soft-strong)';
-    const borderColor = 'var(--platform-border)';
-    const textStrong = 'var(--platform-text-strong)';
-    const notificationDropdownWidth = 380;
-
-    const formatNotificationTime = (value: string) =>
-        formatRelativeTime(value, {
-            emptyLabel: 'Recently',
-            futureLabel: 'Just now',
-            includeSeconds: true,
-        });
-
-    // Mark all notifications as read
-    const markAllRead = () => {
-        const unreadIds = userNotifications
-            .filter((notification) => !notification.read)
-            .map((notification) => notification.id);
-        setUserNotifications(prevNotifications =>
-            prevNotifications.map(notification => ({ ...notification, read: true }))
-        );
-        void markAllNotificationsAsReadClient(unreadIds);
-    };
-
-    const handleNotificationClick = (notification: NotificationFeedItem) => {
-        if (!notification.read) {
-            setUserNotifications(prev =>
-                prev.map(n => n.id === notification.id ? { ...n, read: true } : n)
-            );
-            void markNotificationReadClient(notification.id);
-        }
-
-        if (notification.link) {
-            router.push(notification.link);
-        }
-    };
-
-    return (
-        <div
-            className="w-full h-16 px-10 flex items-center justify-between z-50"
-            style={{
-                minHeight: 30,
-                background: 'transparent'
-            }}
-        >
-            {/* Left Section */}
-            <div className="flex items-center space-x-6">
-                {/* Logo */}
-                <div className="flex items-center space-x-4">
-                    <Box
-                        w={36}
-                        h={36}
-                        style={{
-                            borderRadius: 12,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            background:
-                                'linear-gradient(135deg, var(--platform-accent-strong) 0%, var(--platform-accent) 58%, rgba(255,255,255,0.96) 160%)',
-                            boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.18), 0 10px 24px rgba(15, 23, 42, 0.12)',
-                            color: '#ffffff',
-                            position: 'relative',
-                            overflow: 'hidden',
-                        }}
-                    >
-                        <Text
-                            fw={800}
-                            size="sm"
-                            lh={1}
-                            style={{
-                                letterSpacing: '-0.04em',
-                                position: 'relative',
-                                top: '-0.5px',
-                            }}
-                        >
-                            DV
-                        </Text>
-                    </Box>
-                    <Text fw={700} size="xl" style={{ color: textStrong }}>
-                        DeepVisor
-                    </Text>
-                </div>
-
-                {/* Platform dropdown */}
-                <PlatformAdAccountDropdownClient
-                    platforms={platforms}
-                    adAccounts={adAccounts}
-                    initialPlatformId={initialPlatformId}
-                    initialAccountId={initialAccountId}
-                />
-            </div>
-
-            {/* Right Section */}
-            <div className="flex items-center space-x-6">
-                {/* Quick Action Button */}
-                <Button
-                    leftSection={<IconPlus size={18} />}
-                    variant="light"
-                    size="sm"
-                    radius="md"
-                    fw={600}
-                    onClick={() => router.push('/campaigns/create')}
-                    style={{
-                        backgroundColor: accentSoft,
-                        color: accentStrong,
-                        border: `1px solid ${borderColor}`,
-                    }}
-                >
-                    Create New
-                </Button>
-
-                {/* Search bar */}
-                <TextInput
-                    placeholder="Try searching 'link with Ads'"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    leftSection={<IconSearch size={15} color="gray" />}
-                    styles={() => ({
-                        root: {
-                            width: rem(240),
-                        },
-                        input: {
-                            height: rem(24),
-                            fontSize: rem(15),
-                            borderColor,
-                            backgroundColor: 'rgba(255,255,255,0.72)',
-                        }
-                    })}
-                    className="text-base hidden md:block"
-                />
-
-                {/* Notifications */}
-                <Menu shadow="md" width={notificationDropdownWidth} position="bottom-end">
-                    <Menu.Target>
-                        <Indicator disabled={notificationCount === 0} label={notificationCount} size={18}>
-                            <ActionIcon
-                                size="xl"
-                                radius="xl"
-                                variant="subtle"
-                                style={{ color: accentStrong, backgroundColor: accentSoft }}
-                            >
-                                <IconBell size={24} />
-                            </ActionIcon>
-                        </Indicator>
-                    </Menu.Target>
-
-                    <Menu.Dropdown
-                        style={{
-                            width: `min(92vw, ${notificationDropdownWidth}px)`,
-                            maxHeight: 'min(72vh, 440px)',
-                            overflow: 'hidden',
-                        }}
-                    >
-                        <div className="flex justify-between items-center px-3 py-2">
-                            <Text fw={600}>Notifications</Text>
-                            {notificationCount > 0 && (
-                                <Button variant="subtle" size="xs" onClick={markAllRead}>
-                                    Mark all read
-                                </Button>
-                            )}
-                        </div>
-                        <Menu.Divider />
-
-                        {userNotifications.length > 0 ? (
-                            <>
-                                <Box
-                                    px="xs"
-                                    pb="xs"
-                                    style={{
-                                        maxHeight: 'min(54vh, 320px)',
-                                        overflowY: 'auto',
-                                    }}
-                                >
-                                    {userNotifications.map((notification) => (
-                                        <Menu.Item
-                                            key={notification.id}
-                                            className={notification.read ? 'opacity-70' : ''}
-                                            onClick={() => handleNotificationClick(notification)}
-                                        >
-                                            <div style={{ width: '100%' }}>
-                                                <Group justify="apart" align="flex-start" mb={4} gap="sm" wrap="nowrap">
-                                                    <Text size="sm" fw={600} lineClamp={1} style={{ flex: 1, minWidth: 0 }}>
-                                                        {notification.title}
-                                                    </Text>
-                                                    <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
-                                                        {formatNotificationTime(notification.created_at)}
-                                                    </Text>
-                                                </Group>
-                                                <Text
-                                                    size="sm"
-                                                    c="dimmed"
-                                                    lineClamp={2}
-                                                    title={notification.message}
-                                                >
-                                                    {formatNotificationPreviewMessage(notification.message)}
-                                                </Text>
-                                            </div>
-                                        </Menu.Item>
-                                    ))}
-                                </Box>
-                                <Menu.Divider />
-                                <Menu.Item ta="center">
-                                    <Text size="sm" component="a" href="/notifications" c="blue">
-                                        View all notifications
-                                    </Text>
-                                </Menu.Item>
-                            </>
-                        ) : (
-                            <Box p="md" ta="center">
-                                <Text size="md" c="dimmed">No new notifications</Text>
-                            </Box>
-                        )}
-                    </Menu.Dropdown>
-                </Menu>
-
-                {/* Divider */}
-                <Divider orientation="vertical" className="h-16" color={borderColor} />
-
-                {/* User menu */}
-                <Menu shadow="md" width={220} position="bottom-end">
-                    <Menu.Target>
-                        <UnstyledButton className="flex items-center">
-                            <Group gap="md">
-                                <Avatar
-                                    color="blue"
-                                    radius="xl"
-                                    size={45}
-                                    style={{
-                                        backgroundColor: accentSoftStrong,
-                                        color: accentStrong,
-                                        border: `1px solid ${borderColor}`,
-                                    }}
-                                >
-                                    {userInitials}
-                                </Avatar>
-                                <div className="hidden md:block">
-                                    <Text size="sm" fw={600} lineClamp={1} style={{ color: textStrong }}>
-                                        {fullName}
-                                    </Text>
-                                    <Text c="dimmed" size="sm" lineClamp={1}>
-                                        {userInfo?.business_name}
-                                    </Text>
-                                </div>
-                                <IconChevronDown size={20} className="hidden md:block" />
-                            </Group>
-                        </UnstyledButton>
-                    </Menu.Target>
-
-                    <Menu.Dropdown>
-                        <Menu.Label>Account</Menu.Label>
-                        <Menu.Item
-                            leftSection={<IconUser size={16} />}
-                            onClick={() => router.push('/settings/profile')}
-                        >
-                            Profile
-                        </Menu.Item>
-                        <Menu.Item
-                            leftSection={<IconSettings size={16} />}
-                            onClick={() => router.push('/settings')}
-                        >
-                            Settings
-                        </Menu.Item>
-                        <Menu.Item
-                            leftSection={<IconHelp size={16} />}
-                            onClick={() => router.push('/help')}
-                        >
-                            Help Center
-                        </Menu.Item>
-                        <Menu.Divider />
-                        <Menu.Item
-                            color="red"
-                            leftSection={<IconLogout size={16} />}
-                            onClick={clientHandleSignOut}
-                        >
-                            Logout
-                        </Menu.Item>
-                    </Menu.Dropdown>
-                </Menu>
-            </div>
+      <div className="dv-topbar-actions">
+        <div className="dv-search">
+          <Search size={15} strokeWidth={1.6} />
+          <span>Search campaigns, leads, reports</span>
         </div>
-    );
+        <button
+          type="button"
+          className="dv-outline-button"
+          onClick={() => router.push("/campaigns/create")}
+        >
+          <Plus size={16} strokeWidth={1.6} />
+          New campaign
+        </button>
+        <ThemeToggle />
+        <button
+          type="button"
+          className="dv-icon-button"
+          onClick={() => router.push("/notifications")}
+          aria-label="Open approvals"
+        >
+          <Bell size={17} strokeWidth={1.6} />
+          {unreadCount > 0 ? (
+            <span className="dv-notification-dot">{unreadCount}</span>
+          ) : null}
+        </button>
+        <WorkspaceSwitcherClient />
+        <Menu shadow="md" width={220} position="bottom-end">
+          <Menu.Target>
+            <button type="button" className="dv-user-button">
+              <Avatar size={32} radius="xl" color="orange">
+                {initials}
+              </Avatar>
+              <span>{fullName}</span>
+              <ChevronDown size={15} strokeWidth={1.6} />
+            </button>
+          </Menu.Target>
+          <Menu.Dropdown>
+            <Menu.Label>Account</Menu.Label>
+            <Menu.Item
+              leftSection={<User size={15} />}
+              onClick={() => router.push("/settings/profile")}
+            >
+              Profile
+            </Menu.Item>
+            <Menu.Item
+              leftSection={<LogOut size={15} />}
+              color="red"
+              onClick={clientHandleSignOut}
+            >
+              Logout
+            </Menu.Item>
+          </Menu.Dropdown>
+        </Menu>
+      </div>
+    </div>
+  );
 }

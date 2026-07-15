@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireUserId } from '@/lib/server/actions/user/session';
-import { getOrCreateOrganizationBusinessContext } from '@/lib/server/actions/business/context';
+import { getRequiredAppContext } from '@/lib/server/actions/app/context';
+import { consumeRateLimit, rateLimitResponse } from '@/lib/server/security/rateLimit';
 import { processMetaBackfillJobs } from '@/lib/server/sync/meta/processBackfillJobs';
 import { runManualBusinessSync } from '@/lib/server/sync/manualRefresh';
 import { toSupportedIntegrationPlatform } from '@/lib/shared';
@@ -8,8 +8,18 @@ import type { RefreshIntegrationsResponse } from '@/lib/shared/types/integration
 
 export async function POST(request: NextRequest) {
   try {
-    const userId = await requireUserId();
-    const context = await getOrCreateOrganizationBusinessContext(userId);
+    const context = await getRequiredAppContext(false);
+    const limiter = await consumeRateLimit({
+      identifier: `user:${context.user.id}:business:${context.businessId}`,
+      action: 'sync.refresh',
+      limit: 12,
+      windowSeconds: 60 * 60,
+    });
+
+    if (!limiter.allowed) {
+      return rateLimitResponse(limiter);
+    }
+
     const body = (await request.json().catch(() => null)) as { platformKey?: unknown } | null;
     const platformKey =
       typeof body?.platformKey === 'string'

@@ -67,14 +67,15 @@ export default function PlatformSelector({
                             id="google"
                             icon={<IconBrandGoogle size={24} />}
                             title="Google Ads"
-                            description="Search, Display, YouTube"
+                            description="Search, Performance Max, Display, YouTube. Reporting is active; campaign publishing needs the Google builder."
                             color="red"
                             available={availablePlatforms.find(p => p.id === 'google')?.available ?? false}
                             onClick={(id) =>
                                 availablePlatforms.find(p => p.id === 'google')?.available
                                     ? onSelectPlatform(id)
-                                    : showError("Google Ads integration coming soon")
+                                    : showError("Google Ads reporting is active. Campaign creation needs the Google Ads builder before publishing is enabled.")
                             }
+                            unavailableLabel="Builder pending"
                         />
 
                         {/* TikTok */}
@@ -90,6 +91,7 @@ export default function PlatformSelector({
                                     ? onSelectPlatform(id)
                                     : showError("TikTok Ads integration coming soon")
                             }
+                            unavailableLabel="Coming Soon"
                         />
                     </Stack>
                 </Stack>
@@ -107,10 +109,11 @@ interface PlatformCardProps {
     color: string;
     available: boolean;
     onClick: (id: string) => void;
+    unavailableLabel?: string;
 }
 
 function PlatformCard({
-    id, icon, title, description, color, available, onClick
+    id, icon, title, description, color, available, onClick, unavailableLabel = 'Coming Soon'
 }: PlatformCardProps) {
     return (
         <Paper
@@ -139,7 +142,7 @@ function PlatformCard({
                     <Group gap="xs">
                         <Text fw={600} size="lg">{title}</Text>
                         {!available && (
-                            <Badge size="xs" variant="outline">Coming Soon</Badge>
+                            <Badge size="xs" variant="outline">{unavailableLabel}</Badge>
                         )}
                     </Group>
                     <Text size="sm" c="dimmed">{description}</Text>

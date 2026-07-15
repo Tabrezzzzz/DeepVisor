@@ -26,13 +26,13 @@ export default function KpiFrequencyChart({ kpis, summary }: KpiFrequencyChartPr
             radius="lg"
             p="lg"
             style={{
-              borderColor: 'var(--mantine-color-blue-2)',
-              background: 'linear-gradient(145deg, rgba(14,165,233,0.12), rgba(255,255,255,0.92))',
+              borderColor: 'rgba(253,75,35,0.22)',
+              background: 'linear-gradient(145deg, rgba(253,75,35,0.12), rgba(255,255,255,0.92))',
             }}
           >
             <Group justify="space-between" align="flex-start" mb="md">
               <Group gap="xs" align="center">
-                <ThemeIcon variant="light" color="blue" radius="md" size="lg">
+                <ThemeIcon variant="light" color="orange" radius="md" size="lg">
                   <IconChartBar size={18} />
                 </ThemeIcon>
                 <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
@@ -77,7 +77,7 @@ export default function KpiFrequencyChart({ kpis, summary }: KpiFrequencyChartPr
           withBorder
           radius="lg"
           p="md"
-          style={{ background: 'linear-gradient(145deg, rgba(15,23,42,0.04), rgba(14,165,233,0.08))' }}
+          style={{ background: 'linear-gradient(145deg, rgba(15,23,42,0.04), rgba(253,75,35,0.08))' }}
         >
           <Group gap="xs" mb={6}>
             <ThemeIcon variant="light" color="teal" radius="md">

@@ -375,6 +375,15 @@ export async function syncGoogleBusinessPlatform(input: {
           leads: toNumber(metrics.conversions ?? metrics.allConversions ?? metrics.all_conversions),
           messages: 0,
           calls: 0,
+          conversions: toNumber(metrics.conversions),
+          allConversions: toNumber(metrics.allConversions ?? metrics.all_conversions),
+          conversionValue: toNumber(metrics.conversionsValue ?? metrics.conversions_value),
+          allConversionValue: toNumber(metrics.allConversionsValue ?? metrics.all_conversions_value),
+          searchImpressionShare: toNumber(metrics.searchImpressionShare ?? metrics.search_impression_share) || null,
+          searchBudgetLostImpressionShare:
+            toNumber(metrics.searchBudgetLostImpressionShare ?? metrics.search_budget_lost_impression_share) || null,
+          searchRankLostImpressionShare:
+            toNumber(metrics.searchRankLostImpressionShare ?? metrics.search_rank_lost_impression_share) || null,
           syncedAt: input.syncedAt,
         };
       })
@@ -393,7 +402,10 @@ export async function syncGoogleBusinessPlatform(input: {
       metrics.conversions,
       metrics.all_conversions,
       metrics.conversions_value,
-      metrics.all_conversions_value
+      metrics.all_conversions_value,
+      metrics.search_impression_share,
+      metrics.search_budget_lost_impression_share,
+      metrics.search_rank_lost_impression_share
     FROM campaign
     WHERE segments.date BETWEEN '${requestedStartDate}' AND '${requestedEndDate}'
   `);

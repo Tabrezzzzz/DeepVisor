@@ -41,6 +41,8 @@ const BORDER = 'var(--mantine-color-gray-3)';
 const Z_HEADER = 2;
 const Z_STICKY_RIGHT = 4;
 const RIGHT_COL_WIDTH = 24;
+const SELECTED_ROW_BG = 'var(--platform-accent-soft)';
+const ACTION_COLOR = 'orange';
 
 export default function CampaignTable({
   campaigns,
@@ -54,7 +56,12 @@ export default function CampaignTable({
   platformColor = 'dark',
   fillHeight = false,
 }: CampaignTableProps) {
-  const fmt$ = (n?: number) => `$${Number(n || 0).toFixed(2)}`;
+  const fmt$ = (n?: number) =>
+    new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 0,
+    }).format(Number(n || 0));
 
   const maxRowsBeforeScroll = 12;
   const headerH = 44;
@@ -114,7 +121,7 @@ export default function CampaignTable({
                     <Menu.Target>
                       <ActionIcon
                         variant="light"
-                        color={platformColor}
+                        color={ACTION_COLOR}
                         onClick={(event) => event.stopPropagation()}
                       >
                         <IconDots size={16} />
@@ -254,8 +261,8 @@ export default function CampaignTable({
           ) : (
             campaigns.map((campaign) => {
               const selected = selectedCampaignId === campaign.id;
-              const rowBg = selected ? `var(--mantine-color-${platformColor}-1)` : 'transparent';
-              const stickyCellBg = selected ? `var(--mantine-color-${platformColor}-1)` : BG;
+              const rowBg = selected ? SELECTED_ROW_BG : 'transparent';
+              const stickyCellBg = selected ? SELECTED_ROW_BG : BG;
               const reportHref = buildEntityReportUrl({
                 scope: 'campaign',
                 platformIntegrationId,
@@ -282,7 +289,7 @@ export default function CampaignTable({
                       <ActionIcon
                         aria-label={selected ? 'Selected campaign' : 'Select campaign'}
                         variant={selected ? 'filled' : 'default'}
-                        color={selected ? platformColor : 'gray'}
+                        color={selected ? ACTION_COLOR : 'gray'}
                         radius="xl"
                         size="sm"
                         onClick={(event) => {
@@ -383,7 +390,7 @@ export default function CampaignTable({
                   </Table.Td>
                   <Table.Td>
                     <Text size="sm">
-                      {Number(campaign.leads) > 0 ? fmt$(Number(campaign.spend || 0) / Number(campaign.leads)) : '$0.00'}
+                      {Number(campaign.leads) > 0 ? fmt$(Number(campaign.spend || 0) / Number(campaign.leads)) : fmt$(0)}
                     </Text>
                   </Table.Td>
 
@@ -402,7 +409,7 @@ export default function CampaignTable({
                   >
                     <Menu position="bottom-end" withArrow offset={4}>
                       <Menu.Target>
-                        <ActionIcon variant="filled" color={platformColor}>
+                        <ActionIcon variant="filled" color={ACTION_COLOR}>
                           <IconDots size={16} />
                         </ActionIcon>
                       </Menu.Target>

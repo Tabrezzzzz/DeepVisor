@@ -18,6 +18,7 @@ import {
   Modal,
   Paper,
   ScrollArea,
+  Select,
   SimpleGrid,
   Stack,
   Text,
@@ -33,7 +34,6 @@ import {
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Fragment, useEffect, useMemo, useState, useTransition } from 'react';
-import { ReferenceDot } from 'recharts';
 import { buildReportUrl, CHART_METRIC_COLORS, formatChartDateLabel } from '@/lib/shared';
 import type {
   DashboardAudienceSlice,
@@ -44,6 +44,7 @@ import type {
   ReportBreakdownRow,
   ReportFilterOptions,
   ReportKpi,
+  ReportMetricTotals,
   ReportPayload,
   ReportTimeSeriesPoint,
 } from '@/lib/server/reports/types';
@@ -104,7 +105,7 @@ const EFFICIENCY_TIMELINE_SERIES: ReportChartSeries[] = [
 const FINDING_ANNOTATION_COLORS = {
   critical: '#e03131',
   warning: '#f08c00',
-  info: '#1c7ed6',
+  info: '#fd4b23',
 } as const;
 
 const FINDING_SHORT_LABELS = {
@@ -685,7 +686,7 @@ function buildAgeGenderAudienceChart(input: {
   );
   const series: AudienceChartSeries[] = [
     { name: 'Female', color: 'pink.5' },
-    { name: 'Male', color: 'blue.6' },
+    { name: 'Male', color: 'orange.6' },
   ];
 
   if (data.some((row) => row.Unknown > 0)) {
@@ -734,7 +735,7 @@ function platformSeriesColor(label: string) {
 
   switch (normalized) {
     case 'facebook':
-      return 'blue.6';
+      return 'orange.6';
     case 'instagram':
       return 'red.6';
     case 'messenger':
@@ -1212,13 +1213,718 @@ function KpiCard({ kpi }: { kpi: ReportKpi }) {
   );
 }
 
+type ReportAnalyticsMode =
+  | 'ranking'
+  | 'efficiency'
+  | 'funnel'
+  | 'activity'
+  | 'cost'
+  | 'waste'
+  | 'placement';
+
+const REPORT_ANALYTICS_OPTIONS: Array<{
+  value: ReportAnalyticsMode;
+  label: string;
+  eyebrow: string;
+  description: string;
+}> = [
+  {
+    value: 'ranking',
+    label: 'Campaign Ranking Table With Bars',
+    eyebrow: 'Ranking',
+    description: 'Ranked entities with spend, results, and cost/result bars.',
+  },
+  {
+    value: 'efficiency',
+    label: 'Spend vs Results Efficiency Chart',
+    eyebrow: 'Efficiency',
+    description: 'Spend bars paired with results and cost/result by period.',
+  },
+  {
+    value: 'funnel',
+    label: 'Funnel Summary',
+    eyebrow: 'Funnel',
+    description: 'Impressions to clicks to lead/result conversion shape.',
+  },
+  {
+    value: 'activity',
+    label: 'Delivery Activity Status',
+    eyebrow: 'Activity',
+    description: 'Active days, last delivery, and selected-range health.',
+  },
+  {
+    value: 'cost',
+    label: 'Cost Efficiency Distribution',
+    eyebrow: 'Distribution',
+    description: 'Campaigns grouped by efficient, watch, expensive, or no-result spend.',
+  },
+  {
+    value: 'waste',
+    label: 'Spend Waste Map',
+    eyebrow: 'Waste map',
+    description: 'Find scale, waste, opportunity, and low-signal entities.',
+  },
+  {
+    value: 'placement',
+    label: 'Placement Breakdown',
+    eyebrow: 'Surface',
+    description: 'Publisher/platform/device share from synced delivery breakdowns.',
+  },
+];
+
+function getAnalyticsOption(mode: ReportAnalyticsMode) {
+  return REPORT_ANALYTICS_OPTIONS.find((option) => option.value === mode) ?? REPORT_ANALYTICS_OPTIONS[0];
+}
+
+function getAnalyticsSelectData(mode: ReportAnalyticsMode, blockedMode: ReportAnalyticsMode) {
+  return REPORT_ANALYTICS_OPTIONS.filter(
+    (option) => option.value === mode || option.value !== blockedMode
+  ).map((option) => ({
+    value: option.value,
+    label: option.label,
+  }));
+}
+
+function hasReportActivity(row: Pick<ReportMetricTotals, 'spend' | 'conversion' | 'clicks' | 'impressions'>) {
+  return row.spend > 0 || row.conversion > 0 || row.clicks > 0 || row.impressions > 0;
+}
+
+function getRankedAnalyticsRows(payload: ReportPayload) {
+  const combinedRows = [
+    ...payload.breakdown.rows,
+    ...payload.ranking.topAdAccountCampaigns,
+    ...payload.ranking.sameCampaignAdsets,
+    ...payload.ranking.topAdAccountAdsets,
+    ...payload.ranking.sameAdsetAds,
+    ...payload.ranking.topAdAccountAds,
+  ];
+
+  return rankBreakdownRows(combinedRows);
+}
+
+function EmptyAnalyticsState({ title, description }: { title: string; description: string }) {
+  return (
+    <Stack align="center" justify="center" gap="xs" className={classes.analyticsEmptyState}>
+      <Text fw={900}>{title}</Text>
+      <Text size="sm" c="dimmed" ta="center" maw={360}>
+        {description}
+      </Text>
+    </Stack>
+  );
+}
+
+function truncateChartLabel(value: string, maxLength = 18) {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 1)}...` : value;
+}
+
+function CampaignRankingBars({ payload }: { payload: ReportPayload }) {
+  const rows = getRankedAnalyticsRows(payload).slice(0, 6);
+  const maxSpend = Math.max(...rows.map((row) => row.spend), 1);
+
+  if (rows.length === 0) {
+    return (
+      <EmptyAnalyticsState
+        title="No ranked campaign rows"
+        description="Synced campaign, ad set, or ad rows will appear here once the selected scope has delivery or structure data."
+      />
+    );
+  }
+
+  return (
+    <Stack gap="sm" className={classes.analyticsRankingList}>
+      {rows.map((row, index) => {
+        const width = Math.max(8, Math.round((row.spend / maxSpend) * 100));
+        const resultLabel =
+          row.conversion > 0
+            ? `${formatNumber(row.conversion)} results`
+            : row.spend > 0
+              ? 'No results'
+              : 'No spend';
+
+        return (
+          <div key={`${row.level}:${row.id}`} className={classes.analyticsRankRow}>
+            <Group justify="space-between" align="flex-start" gap="md" wrap="nowrap">
+              <Group gap="sm" align="flex-start" wrap="nowrap" style={{ minWidth: 0 }}>
+                <span className={classes.analyticsRankIndex}>{index + 1}</span>
+                <div style={{ minWidth: 0 }}>
+                  <Text fw={900} lineClamp={1}>
+                    {row.name}
+                  </Text>
+                  <Text size="xs" c="dimmed" mt={2}>
+                    {getEntityLabel(row.level)} · {row.status ?? 'Unknown status'}
+                  </Text>
+                </div>
+              </Group>
+              <Stack gap={2} align="flex-end">
+                <Text fw={900}>{formatCurrency(row.spend, payload.meta.currencyCode, 0)}</Text>
+                <Text size="xs" c="dimmed">
+                  {resultLabel}
+                </Text>
+              </Stack>
+            </Group>
+            <div className={classes.analyticsBarTrack} aria-hidden="true">
+              <span className={classes.analyticsBarFill} style={{ width: `${width}%` }} />
+            </div>
+            <Group gap="xs" wrap="wrap">
+              <Badge color="gray" variant="light" radius="sm">
+                {formatCurrency(row.costPerResult, payload.meta.currencyCode, 2)} / result
+              </Badge>
+              <Badge color="gray" variant="light" radius="sm">
+                {formatRate(row.ctr)} CTR
+              </Badge>
+              {row.drilldownHref ? (
+                <Button component={Link} href={row.drilldownHref} size="compact-xs" radius="xl" variant="subtle">
+                  Open
+                </Button>
+              ) : null}
+            </Group>
+          </div>
+        );
+      })}
+    </Stack>
+  );
+}
+
+function SpendResultsEfficiency({ payload }: { payload: ReportPayload }) {
+  const rows = payload.series.filter(hasReportActivity).slice(-8);
+  const maxSpend = Math.max(...rows.map((row) => row.spend), 1);
+  const maxResults = Math.max(...rows.map((row) => row.conversion), 1);
+
+  if (rows.length === 0) {
+    return (
+      <EmptyAnalyticsState
+        title="No delivery in this range"
+        description="Switch to Max or a wider date range to inspect the last active spend and result window."
+      />
+    );
+  }
+
+  return (
+    <div className={classes.analyticsComboChart}>
+      <div className={classes.analyticsComboLegend}>
+        <span><i className={classes.analyticsLegendSpend} /> Spend bar</span>
+        <span><i className={classes.analyticsLegendResults} /> Results marker</span>
+        <span><i className={classes.analyticsLegendCost} /> Cost/result</span>
+      </div>
+      <div className={classes.analyticsComboPlot}>
+        {rows.map((point) => {
+          const spendHeight = Math.max(point.spend > 0 ? 8 : 0, Math.round((point.spend / maxSpend) * 76));
+          const resultHeight =
+            point.conversion > 0 ? Math.max(10, Math.round((point.conversion / maxResults) * 76)) : 0;
+          const resultBottom = Math.min(84, Math.max(8, resultHeight + 8));
+
+        return (
+          <div
+            key={point.key}
+            className={classes.analyticsComboColumn}
+            title={`${formatChartDateLabel(point.label)}: ${formatCurrency(point.spend, payload.meta.currencyCode, 0)} spend, ${formatNumber(point.conversion)} results`}
+          >
+            <span className={classes.analyticsComboCost}>
+                {point.conversion > 0
+                  ? formatCurrency(point.costPerResult, payload.meta.currencyCode, 0)
+                  : 'No result'}
+            </span>
+            <div className={classes.analyticsComboCanvas}>
+              <span
+                className={classes.analyticsComboResultMarker}
+                style={{ bottom: `${resultBottom}%` }}
+              >
+                {formatNumber(point.conversion)}
+              </span>
+              <span
+                className={classes.analyticsComboBar}
+                style={{ height: `${spendHeight}%` }}
+              />
+            </div>
+            <div className={classes.analyticsComboFooter}>
+              <strong>{formatChartDateLabel(point.label)}</strong>
+              <span>{formatCurrency(point.spend, payload.meta.currencyCode, 0)}</span>
+            </div>
+              </div>
+        );
+      })}
+      </div>
+    </div>
+  );
+}
+
+function FunnelSummaryGraph({ payload }: { payload: ReportPayload }) {
+  const steps = [
+    { label: 'Impressions', value: payload.summary.impressions },
+    { label: 'Clicks', value: payload.summary.clicks },
+    { label: 'Link clicks', value: payload.summary.linkClicks },
+    { label: 'Results', value: payload.summary.conversion },
+  ];
+  const maxValue = Math.max(...steps.map((step) => step.value), 1);
+
+  return (
+    <div className={classes.analyticsFunnelChart}>
+      {steps.map((step, index) => {
+        const width = Math.max(step.value > 0 ? 10 : 0, Math.round((step.value / maxValue) * 100));
+        const previous = index > 0 ? steps[index - 1]?.value ?? 0 : 0;
+        const rate = previous > 0 ? (step.value / previous) * 100 : null;
+
+        return (
+          <div key={step.label} className={classes.analyticsFunnelStep}>
+            <div className={classes.analyticsFunnelMeta}>
+              <span>{step.label}</span>
+              <strong>{formatNumber(step.value)}</strong>
+            </div>
+            <div className={classes.analyticsFunnelShape} style={{ width: `${width}%` }}>
+              <span>{rate == null ? 'Entry' : `${formatRate(rate)} retained`}</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DeliveryActivityStatus({ payload }: { payload: ReportPayload }) {
+  const activeSeries = payload.series.filter(hasReportActivity);
+  const lastActive = activeSeries[activeSeries.length - 1] ?? null;
+  const activeBuckets = activeSeries.length;
+  const totalBuckets = payload.series.length;
+  const activeDays = payload.activeDates?.totalActiveDays ?? activeBuckets;
+  const days = payload.activeDates?.days.slice(-42) ?? [];
+
+  return (
+    <Stack gap="md">
+      <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+        <div className={classes.analyticsStatTile}>
+          <Text size="xs" c="dimmed" tt="uppercase" fw={800}>
+            Active buckets
+          </Text>
+          <Text fw={950} size="1.5rem">
+            {activeBuckets}/{Math.max(totalBuckets, activeBuckets)}
+          </Text>
+        </div>
+        <div className={classes.analyticsStatTile}>
+          <Text size="xs" c="dimmed" tt="uppercase" fw={800}>
+            Active days
+          </Text>
+          <Text fw={950} size="1.5rem">
+            {formatNumber(activeDays)}
+          </Text>
+        </div>
+        <div className={classes.analyticsStatTile}>
+          <Text size="xs" c="dimmed" tt="uppercase" fw={800}>
+            Last delivery
+          </Text>
+          <Text fw={950} size="1rem">
+            {lastActive ? formatChartDateLabel(lastActive.label) : 'No delivery'}
+          </Text>
+        </div>
+      </SimpleGrid>
+      {days.length > 0 ? (
+        <div className={classes.analyticsActivityBlock}>
+          <div className={classes.analyticsActivityLegend}>
+            <span><i /> Active delivery day</span>
+            <span><i className={classes.analyticsActivityLegendIdle} /> No delivery</span>
+          </div>
+          <div className={classes.analyticsActivityGrid}>
+            {days.map((day) => (
+              <span
+                key={day.date}
+                title={`${day.date}: ${day.activeEntityCount} active ${payload.activeDates?.entityLabel ?? 'entities'}`}
+                className={day.activeEntityCount > 0 ? classes.analyticsActivityDayActive : undefined}
+              />
+            ))}
+          </div>
+        </div>
+      ) : (
+        <Text size="sm" c="dimmed">
+          No active-day calendar is available for this account-level view. The series summary above is based on the selected report buckets.
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
+function CostEfficiencyDistribution({ payload }: { payload: ReportPayload }) {
+  const rows = getRankedAnalyticsRows(payload).filter((row) => row.spend > 0);
+  const buckets = [
+    {
+      label: 'Efficient',
+      rows: rows.filter((row) => row.conversion > 0 && row.costPerResult <= payload.summary.costPerResult * 0.75),
+    },
+    {
+      label: 'Watch',
+      rows: rows.filter((row) => row.conversion > 0 && row.costPerResult > payload.summary.costPerResult * 0.75 && row.costPerResult <= payload.summary.costPerResult * 1.35),
+    },
+    {
+      label: 'Expensive',
+      rows: rows.filter((row) => row.conversion > 0 && row.costPerResult > payload.summary.costPerResult * 1.35),
+    },
+    {
+      label: 'No result spend',
+      rows: rows.filter((row) => row.conversion === 0),
+    },
+  ];
+  const maxCount = Math.max(...buckets.map((bucket) => bucket.rows.length), 1);
+
+  return (
+    <Stack gap="sm">
+      {buckets.map((bucket) => {
+        const spend = bucket.rows.reduce((total, row) => total + row.spend, 0);
+        const width = Math.max(bucket.rows.length > 0 ? 7 : 0, Math.round((bucket.rows.length / maxCount) * 100));
+
+        return (
+          <div key={bucket.label} className={classes.analyticsDistributionRow}>
+            <Group justify="space-between" gap="md">
+              <div>
+                <Text fw={900}>{bucket.label}</Text>
+                <Text size="xs" c="dimmed">
+                  {bucket.rows.length} entities · {formatCurrency(spend, payload.meta.currencyCode, 0)} spend
+                </Text>
+              </div>
+              <Text fw={900}>{bucket.rows.length}</Text>
+            </Group>
+            <div className={classes.analyticsBarTrack}>
+              <span className={classes.analyticsBarFill} style={{ width: `${width}%` }} />
+            </div>
+          </div>
+        );
+      })}
+    </Stack>
+  );
+}
+
+function CostEfficiencyDonut({ payload }: { payload: ReportPayload }) {
+  const rows = getRankedAnalyticsRows(payload).filter((row) => row.spend > 0);
+  const baselineCost = payload.summary.costPerResult > 0 ? payload.summary.costPerResult : 1;
+  const buckets = [
+    {
+      label: 'Efficient',
+      rows: rows.filter((row) => row.conversion > 0 && row.costPerResult <= baselineCost * 0.75),
+    },
+    {
+      label: 'Watch',
+      rows: rows.filter(
+        (row) =>
+          row.conversion > 0 &&
+          row.costPerResult > baselineCost * 0.75 &&
+          row.costPerResult <= baselineCost * 1.35
+      ),
+    },
+    {
+      label: 'Expensive',
+      rows: rows.filter((row) => row.conversion > 0 && row.costPerResult > baselineCost * 1.35),
+    },
+    {
+      label: 'No result spend',
+      rows: rows.filter((row) => row.conversion === 0),
+    },
+  ];
+  const totalCount = Math.max(rows.length, 1);
+  let cursor = 0;
+  const colors = ['#0f766e', '#f59e0b', '#fd4b23', '#111827'];
+  const gradientStops = buckets.map((bucket, index) => {
+    const start = cursor;
+    const size = (bucket.rows.length / totalCount) * 100;
+    cursor += size;
+    return `${colors[index]} ${start}% ${cursor}%`;
+  });
+
+  return (
+    <div className={classes.analyticsDistributionChart}>
+      <div
+        className={classes.analyticsDistributionDonut}
+        style={{
+          background:
+            rows.length > 0
+              ? `conic-gradient(${gradientStops.join(', ')})`
+              : 'rgba(148, 163, 184, 0.18)',
+        }}
+      >
+        <span>
+          <strong>{formatNumber(rows.length)}</strong>
+          entities
+        </span>
+      </div>
+      <div className={classes.analyticsDistributionLegend}>
+        {buckets.map((bucket, index) => {
+          const spend = bucket.rows.reduce((total, row) => total + row.spend, 0);
+
+          return (
+            <div key={bucket.label} className={classes.analyticsDistributionRow}>
+              <span style={{ background: colors[index] }} />
+              <div>
+                <strong>{bucket.label}</strong>
+                <small>
+                  {bucket.rows.length} entities - {formatCurrency(spend, payload.meta.currencyCode, 0)} spend
+                </small>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SpendWasteMap({ payload }: { payload: ReportPayload }) {
+  const rows = getRankedAnalyticsRows(payload).filter((row) => row.spend > 0).slice(0, 16);
+  const maxSpend = Math.max(...rows.map((row) => row.spend), 1);
+  const maxResults = Math.max(...rows.map((row) => row.conversion), 1);
+
+  if (rows.length === 0) {
+    return (
+      <EmptyAnalyticsState
+        title="No spend to map"
+        description="Waste mapping needs spend by campaign, ad set, or ad. Widen the range or sync delivery rows."
+      />
+    );
+  }
+
+  return (
+    <div className={classes.analyticsWasteMap}>
+      <span className={classes.analyticsWasteAxisX}>Results</span>
+      <span className={classes.analyticsWasteAxisY}>Spend</span>
+      <span className={classes.analyticsQuadrantTopLeft}>Review</span>
+      <span className={classes.analyticsQuadrantTopRight}>Scale</span>
+      <span className={classes.analyticsQuadrantBottomLeft}>Low signal</span>
+      <span className={classes.analyticsQuadrantBottomRight}>Opportunity</span>
+      {rows.map((row) => {
+        const left = Math.min(94, Math.max(4, (row.conversion / maxResults) * 88 + 4));
+        const bottom = Math.min(90, Math.max(6, (row.spend / maxSpend) * 84 + 6));
+        const size = row.conversion === 0 ? 11 : 13;
+
+        return (
+          <span
+            key={`${row.level}:${row.id}`}
+            title={`${row.name}: ${formatCurrency(row.spend, payload.meta.currencyCode, 0)}, ${formatNumber(row.conversion)} results`}
+            className={classes.analyticsWasteDot}
+            style={{ left: `${left}%`, bottom: `${bottom}%`, width: size, height: size }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function PlacementBreakdownGraph({ payload }: { payload: ReportPayload }) {
+  const sourceRows =
+    payload.surface.platformBreakdowns.publisherPlatforms.length > 0
+      ? payload.surface.platformBreakdowns.publisherPlatforms
+      : payload.surface.platformBreakdowns.impressionDevices;
+  const rows = [...sourceRows].sort((left, right) => right.spend - left.spend).slice(0, 6);
+  const maxSpend = Math.max(...rows.map((row) => row.spend), 1);
+
+  if (rows.length === 0) {
+    return (
+      <EmptyAnalyticsState
+        title="No placement rows"
+        description="Meta placement, platform, or device breakdowns will appear after the selected account returns breakdown data."
+      />
+    );
+  }
+
+  return (
+    <Stack gap="sm">
+      {rows.map((row) => {
+        const width = Math.max(5, Math.round((row.spend / maxSpend) * 100));
+
+        return (
+          <div key={`${row.kind}:${row.key}`} className={classes.analyticsPlacementRow}>
+            <Group justify="space-between" gap="md" wrap="nowrap">
+              <div style={{ minWidth: 0 }}>
+                <Text fw={900} lineClamp={1}>
+                  {row.label}
+                </Text>
+                <Text size="xs" c="dimmed">
+                  {formatNumber(row.results)} results · {formatRate(row.ctr)} CTR
+                </Text>
+              </div>
+              <Text fw={900}>{formatCurrency(row.spend, payload.meta.currencyCode, 0)}</Text>
+            </Group>
+            <div className={classes.analyticsBarTrack}>
+              <span className={classes.analyticsBarFill} style={{ width: `${width}%` }} />
+            </div>
+          </div>
+        );
+      })}
+    </Stack>
+  );
+}
+
+function SpendWasteMapExplained({ payload }: { payload: ReportPayload }) {
+  const rows = getRankedAnalyticsRows(payload).filter((row) => row.spend > 0).slice(0, 16);
+  const maxSpend = Math.max(...rows.map((row) => row.spend), 1);
+  const maxResults = Math.max(...rows.map((row) => row.conversion), 1);
+
+  if (rows.length === 0) {
+    return (
+      <EmptyAnalyticsState
+        title="No spend to map"
+        description="Waste mapping needs spend by campaign, ad set, or ad. Widen the range or sync delivery rows."
+      />
+    );
+  }
+
+  return (
+    <Stack gap="sm">
+      <div className={classes.analyticsWasteExplainer}>
+        <span><strong>Y:</strong> higher spend</span>
+        <span><strong>X:</strong> higher results</span>
+        <span><strong>Top-left:</strong> review spend</span>
+        <span><strong>Top-right:</strong> scale candidates</span>
+      </div>
+      <div className={classes.analyticsWasteMap}>
+        <span className={classes.analyticsWasteAxisX}>More results -&gt;</span>
+        <span className={classes.analyticsWasteAxisY}>More spend up</span>
+        <span className={classes.analyticsQuadrantTopLeft}>Review</span>
+        <span className={classes.analyticsQuadrantTopRight}>Scale</span>
+        <span className={classes.analyticsQuadrantBottomLeft}>Low signal</span>
+        <span className={classes.analyticsQuadrantBottomRight}>Opportunity</span>
+        {rows.map((row, index) => {
+          const left = Math.min(94, Math.max(4, (row.conversion / maxResults) * 88 + 4));
+          const bottom = Math.min(90, Math.max(6, (row.spend / maxSpend) * 84 + 6));
+          const size = row.conversion === 0 ? 11 : 13;
+
+          return (
+            <span
+              key={`${row.level}:${row.id}`}
+              title={`${row.name}: ${formatCurrency(row.spend, payload.meta.currencyCode, 0)}, ${formatNumber(row.conversion)} results`}
+              className={classes.analyticsWastePoint}
+              style={{ left: `${left}%`, bottom: `${bottom}%`, width: size, height: size }}
+            >
+              {index < 7 ? <em>{truncateChartLabel(row.name, 16)}</em> : null}
+            </span>
+          );
+        })}
+      </div>
+    </Stack>
+  );
+}
+
+function PlacementShareChart({ payload }: { payload: ReportPayload }) {
+  const sourceRows =
+    payload.surface.platformBreakdowns.publisherPlatforms.length > 0
+      ? payload.surface.platformBreakdowns.publisherPlatforms
+      : payload.surface.platformBreakdowns.impressionDevices;
+  const rows = [...sourceRows].sort((left, right) => right.spend - left.spend).slice(0, 6);
+  const totalSpend = rows.reduce((total, row) => total + row.spend, 0);
+  const colors = ['#fd4b23', '#0f766e', '#f59e0b', '#2563eb', '#111827', '#94a3b8'];
+
+  if (rows.length === 0) {
+    return (
+      <EmptyAnalyticsState
+        title="No placement rows"
+        description="Meta placement, platform, or device breakdowns will appear after the selected account returns breakdown data."
+      />
+    );
+  }
+
+  return (
+    <div className={classes.analyticsPlacementChart}>
+      <div className={classes.analyticsPlacementStackedBar}>
+        {rows.map((row, index) => {
+          const width = totalSpend > 0 ? Math.max(4, (row.spend / totalSpend) * 100) : 0;
+
+          return (
+            <span
+              key={`${row.kind}:${row.key}:bar`}
+              style={{ width: `${width}%`, background: colors[index] }}
+              title={`${row.label}: ${formatCurrency(row.spend, payload.meta.currencyCode, 0)}`}
+            />
+          );
+        })}
+      </div>
+      <div className={classes.analyticsPlacementLegend}>
+        {rows.map((row, index) => {
+          const share = totalSpend > 0 ? (row.spend / totalSpend) * 100 : 0;
+
+          return (
+            <div key={`${row.kind}:${row.key}`} className={classes.analyticsPlacementRow}>
+              <span style={{ background: colors[index] }} />
+              <div>
+                <strong>{row.label}</strong>
+                <small>
+                  {formatRate(share)} spend share - {formatNumber(row.results)} results - {formatRate(row.ctr)} CTR
+                </small>
+              </div>
+              <b>{formatCurrency(row.spend, payload.meta.currencyCode, 0)}</b>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ReportAnalyticsPanel({
+  payload,
+  mode,
+  blockedMode,
+  onModeChange,
+}: {
+  payload: ReportPayload;
+  mode: ReportAnalyticsMode;
+  blockedMode: ReportAnalyticsMode;
+  onModeChange: (mode: ReportAnalyticsMode) => void;
+}) {
+  const option = getAnalyticsOption(mode);
+
+  return (
+    <Card withBorder radius="xl" p="lg" h="100%" className={`${classes.reportCard} ${classes.analyticsPanel}`}>
+      <Stack gap="md" h="100%">
+        <Group justify="space-between" align="flex-start" gap="md" wrap="wrap" className={classes.analyticsPanelHeader}>
+          <div>
+            <Text size="xs" c="dimmed" tt="uppercase" fw={900}>
+              {option.eyebrow}
+            </Text>
+            <Text fw={950} size="xl" mt={4} className={classes.analyticsPanelTitle}>
+              {option.label}
+            </Text>
+            <Text size="sm" c="dimmed" mt={4}>
+              {option.description}
+            </Text>
+          </div>
+          <Select
+            aria-label="Choose report graph"
+            value={mode}
+            onChange={(value) => {
+              if (value) {
+                onModeChange(value as ReportAnalyticsMode);
+              }
+            }}
+            data={getAnalyticsSelectData(mode, blockedMode)}
+            radius="xl"
+            size="sm"
+            className={classes.analyticsSelect}
+            allowDeselect={false}
+          />
+        </Group>
+        <div className={classes.analyticsPanelBody}>
+          {mode === 'ranking' ? (
+            <CampaignRankingBars payload={payload} />
+          ) : mode === 'efficiency' ? (
+            <SpendResultsEfficiency payload={payload} />
+          ) : mode === 'funnel' ? (
+            <FunnelSummaryGraph payload={payload} />
+          ) : mode === 'activity' ? (
+            <DeliveryActivityStatus payload={payload} />
+          ) : mode === 'cost' ? (
+            <CostEfficiencyDonut payload={payload} />
+          ) : mode === 'waste' ? (
+            <SpendWasteMapExplained payload={payload} />
+          ) : (
+            <PlacementShareChart payload={payload} />
+          )}
+        </div>
+      </Stack>
+    </Card>
+  );
+}
+
 function getRankTone(index: number, total: number) {
   if (index === 0) {
     return { color: 'teal', label: 'Top performer' };
   }
 
   if (index <= Math.max(1, Math.floor(total * 0.25))) {
-    return { color: 'blue', label: 'Leading' };
+    return { color: 'orange', label: 'Leading' };
   }
 
   if (index >= Math.max(0, total - Math.max(1, Math.floor(total * 0.25)))) {
@@ -1401,10 +2107,11 @@ function RankedEntityBoard({
     (group) => !shouldCollapseParentRankingGroup(group.level, currentLevel)
   );
   const isTopLevelReport = !isNestedEntityScope(query.scope);
+  const rankingGroupKeys = rankingGroups.map((group) => group.key).join('|');
 
   useEffect(() => {
     setOpenedCollapsedRankingKeys([]);
-  }, [currentLevel, rankingGroups.map((group) => group.key).join('|')]);
+  }, [currentLevel, rankingGroupKeys]);
 
   const renderRankedRows = (inputRows: ReportBreakdownRow[]) =>
     inputRows.slice(0, 4).map((row, index) => {
@@ -1498,7 +2205,7 @@ function RankedEntityBoard({
     return (
       <Paper withBorder radius="xl" p="md" className={classes.reportCard}>
         <Group gap="sm" mb="md" className={classes.cardHeader}>
-          <ThemeIcon variant="light" color="blue" radius="md">
+          <ThemeIcon variant="light" color="orange" radius="md">
             <IconTimeline size={18} />
           </ThemeIcon>
           <div>
@@ -1578,7 +2285,7 @@ function RankedEntityBoard({
       </Modal>
 
       <Group gap="sm" mb="md" className={classes.cardHeader}>
-        <ThemeIcon variant="light" color="blue" radius="md">
+        <ThemeIcon variant="light" color="orange" radius="md">
           <IconTimeline size={18} />
         </ThemeIcon>
         <div>
@@ -1800,7 +2507,7 @@ function ReportDeliverySurfaceGraph({ payload }: { payload: ReportPayload }) {
             hourlyHeatmap ? (
               <Stack gap="sm">
                 <Group gap="xs" wrap="wrap">
-                  <Badge color="blue" variant="light" radius="sm">
+                  <Badge color="orange" variant="light" radius="sm">
                     Best slot: {hourlyHeatmap.summarySlotLabel}
                   </Badge>
                   <Badge color="gray" variant="outline" radius="sm">
@@ -1848,11 +2555,11 @@ function ReportDeliverySurfaceGraph({ payload }: { payload: ReportPayload }) {
                             style={{
                               backgroundColor:
                                 cell.metricAverage > 0
-                                  ? `rgba(37, 99, 235, ${0.12 + cell.intensity * 0.76})`
+                          ? `rgba(253, 75, 35, ${0.12 + cell.intensity * 0.76})`
                                   : 'rgba(241, 245, 249, 0.94)',
                               borderColor:
                                 cell.metricAverage > 0
-                                  ? 'rgba(37, 99, 235, 0.28)'
+                                  ? 'rgba(253, 75, 35, 0.28)'
                                   : 'rgba(226, 232, 240, 0.94)',
                             }}
                             title={`${cell.dayLabel} · ${formatHourLongLabel(
@@ -1894,16 +2601,16 @@ function ReportDeliverySurfaceGraph({ payload }: { payload: ReportPayload }) {
                           gridColumn: `${state.col}`,
                           gridRow: `${state.row}`,
                           backgroundColor: state.isActive
-                            ? `rgba(37, 99, 235, ${0.18 + state.intensity * 0.68})`
+                            ? `rgba(253, 75, 35, ${0.18 + state.intensity * 0.68})`
                             : 'rgba(241, 245, 249, 0.96)',
                           borderColor: state.isActive
-                            ? 'rgba(37, 99, 235, 0.42)'
+                            ? 'rgba(253, 75, 35, 0.42)'
                             : 'rgba(203, 213, 225, 0.9)',
                           color:
                             state.isActive && state.intensity > 0.45
                               ? '#ffffff'
                               : state.isActive
-                                ? '#1d4ed8'
+                                ? '#9a3412'
                                 : '#64748b',
                         }}
                         title={state.isActive ? `${state.name}: ${state.valueLabel}` : state.name}
@@ -1916,7 +2623,7 @@ function ReportDeliverySurfaceGraph({ payload }: { payload: ReportPayload }) {
 
                 <Group gap="xs" wrap="wrap">
                   {regionStateMap.activeStates.map((state) => (
-                    <Badge key={state.code} color="blue" variant="light" radius="sm">
+                    <Badge key={state.code} color="orange" variant="light" radius="sm">
                       {state.name}: {state.valueLabel}
                     </Badge>
                   ))}
@@ -2121,49 +2828,6 @@ export function ReportsClient({ payload, filterOptions, isDemo = false }: Report
     };
   }, [currentSearchString, isDemo]);
 
-  const storyData = useMemo(
-    () =>
-      payload.series.map((point) => ({
-        label: formatChartDateLabel(point.label),
-        Spend: Number(point.spend.toFixed(2)),
-        Results: point.conversion,
-        Clicks: point.clicks,
-      })),
-    [payload.series]
-  );
-  const efficiencyTrendData = useMemo(
-    () =>
-      payload.series.map((point) => ({
-        label: formatChartDateLabel(point.label),
-        CTR: Number(point.ctr.toFixed(2)),
-        CPC: Number(point.cpc.toFixed(2)),
-        CPM: Number(point.cpm.toFixed(2)),
-      })),
-    [payload.series]
-  );
-  const reportTrendXAxisProps = useMemo(
-    () => ({
-      minTickGap: 20,
-      tickMargin: 10,
-      padding: {
-        left: 18,
-        right: 30,
-      },
-    }),
-    []
-  );
-  const reportTrendChartProps = useMemo(
-    () => ({
-      margin: {
-        top: 8,
-        right: 32,
-        bottom: 8,
-        left: 8,
-      },
-    }),
-    []
-  );
-
   const activeFilterCount = useMemo(() => getActiveFilterCount(payload), [payload]);
   const visibleFilterSummary = useMemo(
     () =>
@@ -2180,109 +2844,10 @@ export function ReportsClient({ payload, filterOptions, isDemo = false }: Report
       }),
     [payload.export.filterSummary]
   );
-  const hasTrendData = storyData.length > 0;
-  const hasEfficiencyTrendData = efficiencyTrendData.length > 0;
-  const topResultsPoint = useMemo(
-    () => pickMaxPoint(payload.series, 'conversion'),
-    [payload.series]
-  );
-  const topSpendPoint = useMemo(() => pickMaxPoint(payload.series, 'spend'), [payload.series]);
-  const topCtrPoint = useMemo(() => pickMaxPoint(payload.series, 'ctr'), [payload.series]);
-  const persistedFindingAnnotations = useMemo(
-    () =>
-      payload.findings.slice(0, 6).reduce<{
-        timeline: TimelineAnnotation[];
-        quality: TimelineAnnotation[];
-      }>(
-        (accumulator, finding) => {
-          const mapped = buildFindingAnnotation(finding, payload.series);
-          if (!mapped) {
-            return accumulator;
-          }
-
-          if (mapped.bucket === 'timeline') {
-            accumulator.timeline.push(mapped.annotation);
-          } else {
-            accumulator.quality.push(mapped.annotation);
-          }
-
-          return accumulator;
-        },
-        { timeline: [], quality: [] }
-      ),
-    [payload.findings, payload.series]
-  );
-  const timelineAnnotations = useMemo<TimelineAnnotation[]>(() => {
-    const annotations: TimelineAnnotation[] = [...persistedFindingAnnotations.timeline];
-
-    if (topResultsPoint) {
-      annotations.push({
-        key: `results-${topResultsPoint.label}`,
-        chartLabel: formatChartDateLabel(topResultsPoint.label),
-        value: topResultsPoint.conversion,
-        label: 'Highest results',
-        detail: 'Strongest results point in the selected range.',
-        color: CHART_METRIC_COLORS.results,
-      });
-    }
-
-    if (topSpendPoint) {
-      annotations.push({
-        key: `spend-${topSpendPoint.label}`,
-        chartLabel: formatChartDateLabel(topSpendPoint.label),
-        value: Number(topSpendPoint.spend.toFixed(2)),
-        label: 'Highest spend',
-        detail: 'Largest spend point in the selected range.',
-        color: CHART_METRIC_COLORS.spend,
-      });
-    }
-
-    return annotations;
-  }, [persistedFindingAnnotations.timeline, topResultsPoint, topSpendPoint]);
-  const qualityAnnotations = useMemo<TimelineAnnotation[]>(() => {
-    const annotations: TimelineAnnotation[] = [...persistedFindingAnnotations.quality];
-
-    if (!topCtrPoint) {
-      return annotations;
-    }
-
-    annotations.push({
-        key: `ctr-${topCtrPoint.label}`,
-        chartLabel: formatChartDateLabel(topCtrPoint.label),
-        value: Number(topCtrPoint.ctr.toFixed(2)),
-        label: 'Best CTR',
-        detail: 'Highest click-through rate point in the selected range.',
-        color: CHART_METRIC_COLORS.ctr,
-      });
-
-    return annotations;
-  }, [persistedFindingAnnotations.quality, topCtrPoint]);
-  const timelineTooltipProps = useMemo(
-    () => ({
-      content: (props: ReportTooltipContentProps) => (
-        <ReportChartTooltip
-          {...props}
-          series={PERFORMANCE_TIMELINE_SERIES}
-          annotations={timelineAnnotations}
-          valueFormatter={formatPerformanceChartValue}
-        />
-      ),
-    }),
-    [timelineAnnotations]
-  );
-  const qualityTooltipProps = useMemo(
-    () => ({
-      content: (props: ReportTooltipContentProps) => (
-        <ReportChartTooltip
-          {...props}
-          series={EFFICIENCY_TIMELINE_SERIES}
-          annotations={qualityAnnotations}
-          valueFormatter={formatEfficiencyChartValue}
-        />
-      ),
-    }),
-    [qualityAnnotations]
-  );
+  const [primaryAnalyticsMode, setPrimaryAnalyticsMode] =
+    useState<ReportAnalyticsMode>('ranking');
+  const [secondaryAnalyticsMode, setSecondaryAnalyticsMode] =
+    useState<ReportAnalyticsMode>('efficiency');
   const breadcrumbs = useMemo(
     () => buildReportBreadcrumbs(payload, filterOptions),
     [filterOptions, payload]
@@ -2338,7 +2903,7 @@ export function ReportsClient({ payload, filterOptions, isDemo = false }: Report
                       {item.label}
                     </Button>
                   ) : (
-                    <Badge color="blue" variant="light" radius="sm">
+                    <Badge color="orange" variant="light" radius="sm">
                       {item.label}
                     </Badge>
                   )}
@@ -2352,8 +2917,8 @@ export function ReportsClient({ payload, filterOptions, isDemo = false }: Report
           <Paper
             radius="xl"
             p="md"
-            bg="rgba(59,130,246,0.08)"
-            style={{ border: '1px solid rgba(59,130,246,0.16)' }}
+            bg="rgba(253,75,35,0.08)"
+            style={{ border: '1px solid rgba(253,75,35,0.18)' }}
           >
             <Group justify="space-between" align="flex-start" gap="md">
               <div>
@@ -2365,7 +2930,7 @@ export function ReportsClient({ payload, filterOptions, isDemo = false }: Report
                     : 'DeepVisor is still expanding the history window for this selected ad account.'}
                 </Text>
               </div>
-              <Badge color="blue" variant="light">
+              <Badge color="orange" variant="light">
                 {payload.meta.syncCoverage.activeJobStatus ?? 'pending'}
               </Badge>
             </Group>
@@ -2390,157 +2955,22 @@ export function ReportsClient({ payload, filterOptions, isDemo = false }: Report
         </SimpleGrid>
 
         <Grid gutter="md" align="stretch">
-          <Grid.Col span={{ base: 12, xl: 8 }}>
-            <Card withBorder radius="xl" p="lg" h="100%" className={classes.reportCard}>
-              <Group justify="space-between" align="flex-start" gap="md" wrap="wrap" className={classes.cardHeader}>
-                <div>
-                  <Text size="xs" c="dimmed" tt="uppercase" fw={800}>
-                    Timeline
-                  </Text>
-                  <Text fw={900} size="xl" mt={4}>
-                    Performance over time
-                  </Text>
-                  <Text size="sm" c="dimmed" mt={4}>
-                    Delivery and efficiency trends for the selected reporting window.
-                  </Text>
-                </div>
-                <Group gap="xs" wrap="wrap">
-                  <Badge variant="light" color="gray" radius="sm">
-                    {payload.query.rangeMode === 'max'
-                      ? 'Summary comparison'
-                      : `Grouped by ${payload.query.groupBy}`}
-                  </Badge>
-                  <Badge variant="light" color={payload.query.compareMode === 'previous_period' ? 'teal' : 'gray'} radius="sm">
-                    {payload.query.rangeMode === 'max'
-                      ? 'Max summary'
-                      : payload.query.compareMode === 'previous_period'
-                        ? 'Previous period on'
-                        : 'No comparison'}
-                  </Badge>
-                </Group>
-              </Group>
-
-              <Stack gap={0} className={classes.timelineChartStack}>
-                <section className={classes.timelineChartSection}>
-                  <Group justify="space-between" align="flex-start" gap="md" wrap="wrap" className={classes.timelineSectionHeader}>
-                    <div>
-                      <Text size="xs" c="dimmed" tt="uppercase" fw={800}>
-                        Delivery trend
-                      </Text>
-                      <Text size="sm" c="dimmed" mt={3}>
-                        Spend, results, and clicks.
-                      </Text>
-                    </div>
-                    <Group gap="xs" wrap="wrap" justify="flex-end" className={classes.timelineHeaderActions}>
-                      <AnnotationLegend annotations={timelineAnnotations} />
-                      <Badge variant="light" color="gray" radius="sm">
-                        Performance
-                      </Badge>
-                    </Group>
-                  </Group>
-
-                  <div className={classes.chartWrap}>
-                    {hasTrendData ? (
-                      <LineChart
-                        h={320}
-                        data={storyData}
-                        dataKey="label"
-                        xAxisProps={reportTrendXAxisProps}
-                        lineChartProps={reportTrendChartProps}
-                        series={PERFORMANCE_TIMELINE_SERIES}
-                        tooltipProps={timelineTooltipProps}
-                        curveType="linear"
-                        withLegend
-                        valueFormatter={formatPerformanceChartValue}
-                      >
-                        {timelineAnnotations.map((annotation) => (
-                          <ReferenceDot
-                            key={annotation.key}
-                            x={annotation.chartLabel}
-                            y={annotation.value}
-                            yAxisId="left"
-                            r={7}
-                            fill="#ffffff"
-                            stroke={annotation.color}
-                            strokeWidth={3}
-                            isFront
-                          />
-                        ))}
-                      </LineChart>
-                    ) : (
-                      <Stack justify="center" align="center" h={320} gap="xs">
-                        <Text fw={800}>No time-series trend available yet</Text>
-                        <Text size="sm" c="dimmed" ta="center" maw={360}>
-                          Breakdown data is still shown below, so you can still see which entities are carrying the report.
-                        </Text>
-                      </Stack>
-                    )}
-                  </div>
-                </section>
-
-                <section className={classes.timelineChartSection}>
-                  <Group justify="space-between" align="flex-start" gap="md" wrap="wrap" className={classes.timelineSectionHeader}>
-                    <div>
-                      <Text size="xs" c="dimmed" tt="uppercase" fw={800}>
-                        Quality trend
-                      </Text>
-                      <Text size="sm" c="dimmed" mt={3}>
-                        CTR, CPC, and CPM over time.
-                      </Text>
-                    </div>
-                    <Group gap="xs" wrap="wrap" justify="flex-end" className={classes.timelineHeaderActions}>
-                      <AnnotationLegend annotations={qualityAnnotations} />
-                      <Badge variant="light" color="gray" radius="sm">
-                        Efficiency
-                      </Badge>
-                    </Group>
-                  </Group>
-
-                  <div className={classes.supportingChartWrap}>
-                    {hasEfficiencyTrendData ? (
-                      <LineChart
-                        h={240}
-                        data={efficiencyTrendData}
-                        dataKey="label"
-                        xAxisProps={reportTrendXAxisProps}
-                        lineChartProps={reportTrendChartProps}
-                        series={EFFICIENCY_TIMELINE_SERIES}
-                        tooltipProps={qualityTooltipProps}
-                        curveType="linear"
-                        withLegend
-                        valueFormatter={formatEfficiencyChartValue}
-                      >
-                        {qualityAnnotations.map((annotation) => (
-                          <ReferenceDot
-                            key={annotation.key}
-                            x={annotation.chartLabel}
-                            y={annotation.value}
-                            yAxisId="left"
-                            r={7}
-                            fill="#ffffff"
-                            stroke={annotation.color}
-                            strokeWidth={3}
-                            isFront
-                          />
-                        ))}
-                      </LineChart>
-                    ) : (
-                      <Stack justify="center" align="center" h={240} gap="xs">
-                        <Text fw={800}>No efficiency trend available yet</Text>
-                        <Text size="sm" c="dimmed" ta="center" maw={360}>
-                          Once more time-series points are available, DeepVisor will show how traffic
-                          quality changed across the selected period.
-                        </Text>
-                      </Stack>
-                    )}
-                  </div>
-                </section>
-              </Stack>
-            </Card>
+          <Grid.Col span={{ base: 12, xl: 6 }}>
+            <ReportAnalyticsPanel
+              payload={payload}
+              mode={primaryAnalyticsMode}
+              blockedMode={secondaryAnalyticsMode}
+              onModeChange={setPrimaryAnalyticsMode}
+            />
           </Grid.Col>
 
-          <Grid.Col span={{ base: 12, xl: 4 }}>
-            <ReportDeliverySurfaceGraph payload={payload} />
+          <Grid.Col span={{ base: 12, xl: 6 }}>
+            <ReportAnalyticsPanel
+              payload={payload}
+              mode={secondaryAnalyticsMode}
+              blockedMode={primaryAnalyticsMode}
+              onModeChange={setSecondaryAnalyticsMode}
+            />
           </Grid.Col>
         </Grid>
 

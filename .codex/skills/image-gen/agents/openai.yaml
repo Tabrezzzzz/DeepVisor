@@ -1,0 +1,4 @@
+interface:
+  display_name: "Image generation prompt engineer"
+  short_description: "Help with Image generation prompt engineer tasks"
+  default_prompt: "Use (image-gen.Name) to handle this task."

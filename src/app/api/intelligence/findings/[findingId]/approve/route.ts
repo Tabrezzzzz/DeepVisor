@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { getRequiredAppContext } from '@/lib/server/actions/app/context';
+import { logAuditEvent } from '@/lib/server/audit/logAuditEvent';
+import { consumeRateLimit, rateLimitResponse } from '@/lib/server/security/rateLimit';
 import { createAdminClient } from '@/lib/server/supabase/admin';
 import {
   createCalendarQueueItem,
@@ -12,13 +15,36 @@ import {
 } from '@/lib/server/intelligence/repositories/trendFindings';
 import type { CalendarQueueItemDraft } from '@/lib/server/intelligence/types';
 
+const paramsSchema = z.object({
+  findingId: z.string().uuid(),
+});
+
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ findingId: string }> }
 ) {
   try {
-    const { findingId } = await params;
-    const { businessId, user } = await getRequiredAppContext();
+    const parsedParams = paramsSchema.safeParse(await params);
+    if (!parsedParams.success) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid finding id.' },
+        { status: 400 }
+      );
+    }
+
+    const { findingId } = parsedParams.data;
+    const { businessId, organizationId, user } = await getRequiredAppContext();
+    const limiter = await consumeRateLimit({
+      identifier: `user:${user.id}:business:${businessId}`,
+      action: 'intelligence.finding.approve',
+      limit: 60,
+      windowSeconds: 60 * 60,
+    });
+
+    if (!limiter.allowed) {
+      return rateLimitResponse(limiter);
+    }
+
     const supabase = createAdminClient();
     const finding = await getTrendFindingById(supabase, {
       businessId,
@@ -85,6 +111,24 @@ export async function POST(
     const updatedFinding = await markTrendFindingConvertedToQueue(supabase, {
       businessId,
       findingId,
+    });
+
+    await logAuditEvent(supabase, {
+      businessId,
+      organizationId,
+      actorUserId: user.id,
+      eventType: 'approval.finding_approved',
+      resourceType: 'trend_finding',
+      resourceId: finding.id,
+      platformIntegrationId: finding.platformIntegrationId,
+      metadata: {
+        adAccountId: finding.adAccountId,
+        findingType: finding.findingType,
+        queueItemCreated: !duplicate,
+        actionType: finding.recommendedAction.type,
+      },
+      ipAddress: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? request.headers.get('x-real-ip'),
+      userAgent: request.headers.get('user-agent'),
     });
 
     return NextResponse.json({

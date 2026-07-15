@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireUserId } from '@/lib/server/actions/user/session';
-import { getOrCreateOrganizationBusinessContext } from '@/lib/server/actions/business/context';
+import { getRequiredAppContext } from '@/lib/server/actions/app/context';
+import { logAuditEvent } from '@/lib/server/audit/logAuditEvent';
 import { buildDemoReportPayload } from '@/lib/server/reports/demo';
 import { parseReportQueryInput } from '@/lib/server/reports/query';
 import { buildReportCsvRows } from '@/lib/server/repositories/reports/buildReportCsvRows';
 import { buildReportPayload } from '@/lib/server/repositories/reports/buildReportPayload';
+import { consumeRateLimit, rateLimitResponse } from '@/lib/server/security/rateLimit';
+import { createAdminClient } from '@/lib/server/supabase/admin';
 
 function escapeCsvValue(value: string | number) {
   const stringValue = String(value ?? '');
@@ -29,8 +31,18 @@ function isTruthySearchParam(value: string | null): boolean {
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = await requireUserId();
-    const context = await getOrCreateOrganizationBusinessContext(userId);
+    const context = await getRequiredAppContext(false);
+    const limiter = await consumeRateLimit({
+      identifier: `user:${context.user.id}:business:${context.businessId}`,
+      action: 'report.csv',
+      limit: 30,
+      windowSeconds: 60 * 60,
+    });
+
+    if (!limiter.allowed) {
+      return rateLimitResponse(limiter);
+    }
+
     const query = parseReportQueryInput(
       context.businessId,
       Object.fromEntries(request.nextUrl.searchParams.entries())
@@ -73,6 +85,23 @@ export async function GET(request: NextRequest) {
       headers.join(','),
       ...rows.map((row) => headers.map((header) => escapeCsvValue(row[header as keyof typeof row] ?? '')).join(',')),
     ].join('\n');
+
+    await logAuditEvent(createAdminClient(), {
+      businessId: context.businessId,
+      organizationId: context.organizationId,
+      actorUserId: context.user.id,
+      eventType: 'report.exported',
+      resourceType: 'report',
+      resourceId: 'csv',
+      metadata: {
+        format: 'csv',
+        scope: query.scope,
+        rangeMode: query.rangeMode,
+        demo: demoRequested,
+      },
+      ipAddress: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      userAgent: request.headers.get('user-agent'),
+    });
 
     return new NextResponse(body, {
       status: 200,

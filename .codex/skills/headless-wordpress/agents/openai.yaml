@@ -1,0 +1,4 @@
+interface:
+  display_name: "Headless Wordpress"
+  short_description: "Help with Headless Wordpress tasks"
+  default_prompt: "Use -wordpress to build or review a headless WordPress setup."

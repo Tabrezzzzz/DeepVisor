@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { getRequiredAppContext } from '@/lib/server/actions/app/context';
 import { getMetaPages } from '@/lib/server/actions/meta/pages/actions';
+import { logAuditEvent } from '@/lib/server/audit/logAuditEvent';
+import { consumeRateLimit, rateLimitResponse } from '@/lib/server/security/rateLimit';
 import { createAdminClient } from '@/lib/server/supabase/admin';
 import type { WhatsAppNumberSource, WhatsAppSetupResult } from '@/lib/shared/types/whatsappSetup';
 import { ErrorCode, fail, ok } from '@/lib/shared';
@@ -11,6 +14,19 @@ const WHATSAPP_NUMBER_SOURCES = new Set<WhatsAppNumberSource>([
   'skipped',
   'not_available',
 ]);
+
+const pageWhatsAppSetupSchema = z.object({
+  integrationId: z.string().trim().min(1).max(128),
+  externalAccountId: z.string().trim().min(1).max(128).nullable().optional(),
+  pageId: z.string().trim().min(1).max(128),
+  whatsappNumberSource: z.enum([
+    'page_phone_confirmed',
+    'manual',
+    'skipped',
+    'not_available',
+  ]),
+  whatsappNumber: z.string().trim().max(32).nullable().optional(),
+});
 
 function cleanString(value: unknown): string | null {
   if (typeof value !== 'string') {
@@ -42,8 +58,29 @@ function parseWhatsAppNumberSource(value: unknown): WhatsAppNumberSource | null 
 
 export async function POST(request: NextRequest) {
   try {
-    const { businessId } = await getRequiredAppContext();
-    const body = await request.json().catch(() => ({}));
+    const { businessId, organizationId, user } = await getRequiredAppContext();
+    const limiter = await consumeRateLimit({
+      identifier: `user:${user.id}:business:${businessId}`,
+      action: 'integration.meta.page_whatsapp_setup',
+      limit: 20,
+      windowSeconds: 60 * 60,
+    });
+
+    if (!limiter.allowed) {
+      return rateLimitResponse(limiter);
+    }
+
+    const parsed = pageWhatsAppSetupSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) {
+      return NextResponse.json(
+        fail('Invalid WhatsApp setup payload', ErrorCode.VALIDATION_ERROR, {
+          userMessage: 'Choose a Facebook Page and WhatsApp setup option to continue.',
+        }),
+        { status: 400 }
+      );
+    }
+
+    const body = parsed.data;
     const integrationId = cleanString(body.integrationId);
     const externalAccountId = cleanString(body.externalAccountId);
     const pageId = cleanString(body.pageId);
@@ -148,6 +185,23 @@ export async function POST(request: NextRequest) {
     if (error) {
       throw error;
     }
+
+    await logAuditEvent(supabase, {
+      businessId,
+      organizationId,
+      actorUserId: user.id,
+      eventType: 'integration.meta_page_whatsapp_configured',
+      resourceType: 'business_profile',
+      resourceId: businessId,
+      platformIntegrationId: integrationId,
+      metadata: {
+        pageId: selectedPage.page_id,
+        whatsappNumberSource: setupResult.whatsappNumberSource,
+        hasWhatsappNumber: Boolean(setupResult.whatsappNumber),
+      },
+      ipAddress: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      userAgent: request.headers.get('user-agent'),
+    });
 
     return NextResponse.json(
       ok({

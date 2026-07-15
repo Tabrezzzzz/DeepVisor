@@ -1,0 +1,4 @@
+interface:
+  display_name: "Design Brief"
+  short_description: "Help with Design Brief tasks"
+  default_prompt: "Use (design-brief.Name) to handle this task."

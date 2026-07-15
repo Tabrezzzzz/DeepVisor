@@ -1,5 +1,18 @@
+.onboardingPage {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  background:
+    linear-gradient(90deg, rgba(253, 75, 35, 0.055) 0 1px, transparent 1px),
+    linear-gradient(0deg, rgba(253, 75, 35, 0.045) 0 1px, transparent 1px),
+    #f4f4f1;
+  background-size: 32px 32px;
+  padding: clamp(18px, 4vh, 48px) 18px;
+}
+
 .onboardingShell {
   width: 100%;
+  padding: 0 !important;
 }
 
 .headerStack {
@@ -34,12 +47,41 @@
 .formCard {
   overflow: visible;
   background: rgba(255, 255, 255, 0.96);
+  border-radius: 12px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.08);
+}
+
+.formCard :global(.mantine-Card-root),
+.formCard :global(.mantine-Stepper-root),
+.formCard :global(.mantine-Stepper-content) {
+  overflow: visible;
+}
+
+.formCard :global(.mantine-Input-input) {
+  min-height: 44px;
+}
+
+:global(.dark) .onboardingPage {
+  background:
+    linear-gradient(90deg, rgba(253, 75, 35, 0.08) 0 1px, transparent 1px),
+    linear-gradient(0deg, rgba(253, 75, 35, 0.07) 0 1px, transparent 1px),
+    #090909;
+}
+
+:global(.dark) .formCard {
+  background: rgba(255, 255, 255, 0.065);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: none;
 }
 
 @media (max-width: 760px) {
+  .onboardingPage {
+    align-items: flex-start;
+    padding: 12px 12px 104px;
+  }
+
   .onboardingShell {
     max-width: none;
-    padding: 14px 6px 104px !important;
   }
 
   .headerStack {

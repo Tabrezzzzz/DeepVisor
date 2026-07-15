@@ -2291,6 +2291,273 @@ export type Database = {
           },
         ]
       }
+      meta_lead_forms: {
+        Row: {
+          ad_account_id: string | null
+          business_id: string
+          created_at: string
+          created_time: string | null
+          external_form_id: string
+          id: string
+          last_synced_at: string | null
+          leads_count: number | null
+          locale: string | null
+          name: string | null
+          page_id: string | null
+          page_name: string | null
+          platform_integration_id: string | null
+          questions_json: Json
+          raw_json: Json
+          status: string | null
+          updated_at: string
+        }
+        Insert: {
+          ad_account_id?: string | null
+          business_id: string
+          created_at?: string
+          created_time?: string | null
+          external_form_id: string
+          id?: string
+          last_synced_at?: string | null
+          leads_count?: number | null
+          locale?: string | null
+          name?: string | null
+          page_id?: string | null
+          page_name?: string | null
+          platform_integration_id?: string | null
+          questions_json?: Json
+          raw_json?: Json
+          status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          ad_account_id?: string | null
+          business_id?: string
+          created_at?: string
+          created_time?: string | null
+          external_form_id?: string
+          id?: string
+          last_synced_at?: string | null
+          leads_count?: number | null
+          locale?: string | null
+          name?: string | null
+          page_id?: string | null
+          page_name?: string | null
+          platform_integration_id?: string | null
+          questions_json?: Json
+          raw_json?: Json
+          status?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_lead_forms_ad_account_id_fkey"
+            columns: ["ad_account_id"]
+            isOneToOne: false
+            referencedRelation: "ad_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_lead_forms_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "business_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_lead_forms_platform_integration_id_fkey"
+            columns: ["platform_integration_id"]
+            isOneToOne: false
+            referencedRelation: "platform_integrations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meta_lead_pages: {
+        Row: {
+          business_id: string
+          created_at: string
+          external_page_id: string
+          id: string
+          last_synced_at: string | null
+          name: string | null
+          platform_integration_id: string | null
+          raw_json: Json
+          updated_at: string
+        }
+        Insert: {
+          business_id: string
+          created_at?: string
+          external_page_id: string
+          id?: string
+          last_synced_at?: string | null
+          name?: string | null
+          platform_integration_id?: string | null
+          raw_json?: Json
+          updated_at?: string
+        }
+        Update: {
+          business_id?: string
+          created_at?: string
+          external_page_id?: string
+          id?: string
+          last_synced_at?: string | null
+          name?: string | null
+          platform_integration_id?: string | null
+          raw_json?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_lead_pages_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "business_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_lead_pages_platform_integration_id_fkey"
+            columns: ["platform_integration_id"]
+            isOneToOne: false
+            referencedRelation: "platform_integrations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meta_leads: {
+        Row: {
+          ad_account_id: string | null
+          ad_external_id: string | null
+          ad_name: string | null
+          adset_external_id: string | null
+          adset_name: string | null
+          booked_at: string | null
+          business_id: string
+          campaign_external_id: string | null
+          campaign_name: string | null
+          city: string | null
+          created_at: string
+          email: string | null
+          external_form_id: string | null
+          external_lead_id: string
+          first_contacted_at: string | null
+          full_name: string | null
+          id: string
+          lead_form_id: string | null
+          leadgen_source: string
+          lost_at: string | null
+          notes: string | null
+          owner_user_id: string | null
+          page_id: string | null
+          phone_number: string | null
+          platform_integration_id: string | null
+          qualified_at: string | null
+          quality: string
+          raw_fields_json: Json
+          raw_json: Json
+          status: string
+          submitted_at: string
+          updated_at: string
+        }
+        Insert: {
+          ad_account_id?: string | null
+          ad_external_id?: string | null
+          ad_name?: string | null
+          adset_external_id?: string | null
+          adset_name?: string | null
+          booked_at?: string | null
+          business_id: string
+          campaign_external_id?: string | null
+          campaign_name?: string | null
+          city?: string | null
+          created_at?: string
+          email?: string | null
+          external_form_id?: string | null
+          external_lead_id: string
+          first_contacted_at?: string | null
+          full_name?: string | null
+          id?: string
+          lead_form_id?: string | null
+          leadgen_source?: string
+          lost_at?: string | null
+          notes?: string | null
+          owner_user_id?: string | null
+          page_id?: string | null
+          phone_number?: string | null
+          platform_integration_id?: string | null
+          qualified_at?: string | null
+          quality?: string
+          raw_fields_json?: Json
+          raw_json?: Json
+          status?: string
+          submitted_at: string
+          updated_at?: string
+        }
+        Update: {
+          ad_account_id?: string | null
+          ad_external_id?: string | null
+          ad_name?: string | null
+          adset_external_id?: string | null
+          adset_name?: string | null
+          booked_at?: string | null
+          business_id?: string
+          campaign_external_id?: string | null
+          campaign_name?: string | null
+          city?: string | null
+          created_at?: string
+          email?: string | null
+          external_form_id?: string | null
+          external_lead_id?: string
+          first_contacted_at?: string | null
+          full_name?: string | null
+          id?: string
+          lead_form_id?: string | null
+          leadgen_source?: string
+          lost_at?: string | null
+          notes?: string | null
+          owner_user_id?: string | null
+          page_id?: string | null
+          phone_number?: string | null
+          platform_integration_id?: string | null
+          qualified_at?: string | null
+          quality?: string
+          raw_fields_json?: Json
+          raw_json?: Json
+          status?: string
+          submitted_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_leads_ad_account_id_fkey"
+            columns: ["ad_account_id"]
+            isOneToOne: false
+            referencedRelation: "ad_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_leads_business_id_fkey"
+            columns: ["business_id"]
+            isOneToOne: false
+            referencedRelation: "business_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_leads_lead_form_id_fkey"
+            columns: ["lead_form_id"]
+            isOneToOne: false
+            referencedRelation: "meta_lead_forms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_leads_platform_integration_id_fkey"
+            columns: ["platform_integration_id"]
+            isOneToOne: false
+            referencedRelation: "platform_integrations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       meta_pages: {
         Row: {
           business_id: string

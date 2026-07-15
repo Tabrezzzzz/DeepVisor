@@ -278,7 +278,7 @@ const DEMO_ADS: DemoAd[] = [
   },
   {
     id: 'demo-ad-local-offer',
-    label: 'Local offer - same week appointment',
+    label: 'Local offer - same week sales call',
     parentId: 'demo-adset-local-offer-radius',
     platformId: 'demo-platform-meta',
     adAccountId: 'demo-account-meta-local',

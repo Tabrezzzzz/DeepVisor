@@ -26,16 +26,16 @@ import {
   Title,
 } from '@mantine/core';
 import {
-  IconAlertTriangle,
-  IconArrowUpRight,
-  IconCheck,
-  IconClock,
-  IconLink,
-  IconLock,
-  IconRefresh,
-  IconSettings,
-  IconTrash,
-} from '@tabler/icons-react';
+  AlertTriangle as IconAlertTriangle,
+  ArrowUpRight as IconArrowUpRight,
+  Check as IconCheck,
+  Clock3 as IconClock,
+  Link as IconLink,
+  Lock as IconLock,
+  RefreshCw as IconRefresh,
+  Settings as IconSettings,
+  Trash2 as IconTrash,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
 import toast from 'react-hot-toast';
@@ -133,6 +133,29 @@ type GoogleCredentialStatus = {
 type GoogleCredentialResponse = {
   success?: boolean;
   data?: GoogleCredentialStatus;
+  error?: {
+    userMessage?: string;
+  };
+};
+
+type GoogleDiagnosticsResponse = {
+  success?: boolean;
+  data?: {
+    credentials?: GoogleCredentialStatus;
+    dbHealth?: { ok: boolean; checks?: Array<{ object: string; ok: boolean; message: string | null }> };
+    integration?: {
+      id: string;
+      status: string;
+      selectedAccount?: { externalAccountId?: string | null; name?: string | null } | null;
+    } | null;
+    refreshToken?: { present: boolean; valid: boolean; message?: string | null };
+    accessibleAccounts?: {
+      ok: boolean;
+      count: number;
+      accounts: Array<{ externalAccountId: string; name: string | null; status: string | null }>;
+      message: string | null;
+    };
+  };
   error?: {
     userMessage?: string;
   };
@@ -244,6 +267,9 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
   const [googleDeveloperToken, setGoogleDeveloperToken] = useState('');
   const [googleLoginCustomerId, setGoogleLoginCustomerId] = useState('');
   const [googleScopes, setGoogleScopes] = useState('https://www.googleapis.com/auth/adwords');
+  const [googleDiagnosticsOpened, setGoogleDiagnosticsOpened] = useState(false);
+  const [googleDiagnosticsLoading, setGoogleDiagnosticsLoading] = useState(false);
+  const [googleDiagnostics, setGoogleDiagnostics] = useState<GoogleDiagnosticsResponse['data'] | null>(null);
   const handledGoogleSearchKey = useRef<string | null>(null);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -269,7 +295,7 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
   const sortedPlatforms = useMemo(
     () => sortIntegrationPlatforms(
       platforms.map((platform) => {
-        const detached = pitchDetachedByPlatformId.has(platform.id);
+        const detached = !platform.integrationId && pitchDetachedByPlatformId.has(platform.id);
 
         return {
           ...platform,
@@ -299,7 +325,14 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
     connectedPlatforms[0] ??
     sortedPlatforms[0] ??
     null;
-  const focusedPalette = getIntegrationPlatformPalette(focusedPlatform?.platformKey ?? 'default');
+  const focusedPalette = {
+    ...getIntegrationPlatformPalette(focusedPlatform?.platformKey ?? 'default'),
+    accent: '#fd4b23',
+    accentSoft: 'rgba(253, 75, 35, 0.14)',
+    accentSurface: 'rgba(253, 75, 35, 0.08)',
+    border: 'rgba(253, 75, 35, 0.24)',
+    text: '#111111',
+  };
   const focusedPlatformConnected = focusedPlatform
     ? isIntegrationConnected(focusedPlatform.status)
     : false;
@@ -340,7 +373,6 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
         : `Connect ${focusedPlatform.platformName}`;
   const focusedPrimaryDisabled = !focusedPlatform || focusedPlatformPreviewOnly;
   const heroCardStyle = {
-    background: `linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, ${focusedPalette.accentSurface} 100%)`,
     borderColor: focusedPalette.border,
   } satisfies CSSProperties;
 
@@ -532,6 +564,28 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
     }
   };
 
+  const openGoogleDiagnostics = async (integrationId?: string | null) => {
+    setGoogleDiagnosticsOpened(true);
+    setGoogleDiagnosticsLoading(true);
+    setGoogleDiagnostics(null);
+
+    try {
+      const query = integrationId ? `?integrationId=${encodeURIComponent(integrationId)}` : '';
+      const response = await fetch(`/api/integrations/google/diagnostics${query}`);
+      const body = (await response.json().catch(() => ({}))) as GoogleDiagnosticsResponse;
+
+      if (!response.ok || !body.success) {
+        throw new Error(body.error?.userMessage || 'Failed to run Google Ads diagnostics.');
+      }
+
+      setGoogleDiagnostics(body.data ?? null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to run Google Ads diagnostics.');
+    } finally {
+      setGoogleDiagnosticsLoading(false);
+    }
+  };
+
   useEffect(() => {
     const flow = readFlowState(searchParams);
     const searchKey = searchParams.toString();
@@ -573,7 +627,7 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
       router.replace('/integration');
       router.refresh();
     }
-  }, [searchParams, sortedPlatforms]);
+  }, [router, searchParams, sortedPlatforms]);
 
   const handleOpenAccountSelection = async (
     platform: Platform,
@@ -669,7 +723,7 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
   return (
     <MetaIntegrationFlow returnTo="/integration">
       {({ connectMeta, connecting }) => (
-        <Container size="xl" pos="relative" pb="xl">
+        <Container fluid pos="relative" className={styles.integrationPage}>
           <LoadingOverlay
             visible={refreshing}
             zIndex={1000}
@@ -703,7 +757,6 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                         variant="light"
                         style={{
                           backgroundColor: focusedPalette.accentSoft,
-                          color: focusedPalette.text,
                         }}
                         >
                           {focusedPlatform.platformName}
@@ -712,7 +765,7 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                   </Group>
 
                   <div>
-                    <Title order={2} style={{ color: focusedPalette.text }}>
+                    <Title order={2}>
                       {focusedHeroTitle}
                     </Title>
                     <Text size="md" c="dimmed" mt="sm" maw={680}>
@@ -785,7 +838,6 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                         }}
                         style={{
                           backgroundColor: focusedPalette.accentSoft,
-                          color: focusedPalette.text,
                         }}
                       >
                         {focusedPlatformConnected &&
@@ -795,6 +847,16 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                           : `View ${focusedPlatform.platformName}`}
                       </Button>
                     ) : null}
+                    {focusedPlatform?.platformKey === 'google' ? (
+                      <Button
+                        leftSection={<IconSettings size={16} />}
+                        variant="default"
+                        radius="xl"
+                        onClick={() => void openGoogleDiagnostics(focusedPlatform.integrationId)}
+                      >
+                        Diagnostics
+                      </Button>
+                    ) : null}
                   </Group>
 
                   <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
@@ -802,7 +864,7 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                       label="Connected"
                       title={String(connectedPlatforms.length)}
                       detail={`${sortedPlatforms.length} total channels in your workspace`}
-                      accent="#1877f2"
+                      accent="#fd4b23"
                     />
                     <SummaryCard
                       label="Needs Attention"
@@ -812,7 +874,7 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                           ? 'At least one channel needs review or reconnect.'
                           : 'No reconnect or error states right now.'
                       }
-                      accent="#f59e0b"
+                      accent="#111111"
                     />
                     <SummaryCard
                       label="Latest Sync"
@@ -826,13 +888,13 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                           ? formatRelativeTime(latestSyncedPlatform.lastSyncedAt, { emptyLabel: 'Not synced yet' })
                           : 'Connect a platform to start pulling data.'
                       }
-                      accent="#10b981"
+                      accent="#fd4b23"
                     />
                     <SummaryCard
                       label="Primary Scope"
                       title="1 account / platform"
                       detail="Keeps reporting, recommendations, and queueing focused on one clean dataset."
-                      accent="#64748b"
+                      accent="#111111"
                     />
                   </SimpleGrid>
                 </Stack>
@@ -847,7 +909,7 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                         Current connection map
                       </Title>
                     </div>
-                    <Badge color={syncCoverage > 0 ? 'blue' : 'gray'} variant="light">
+                    <Badge color={syncCoverage > 0 ? 'orange' : 'gray'} variant="light">
                       {syncCoverage}%
                     </Badge>
                   </Group>
@@ -875,10 +937,10 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                           p="sm"
                           className={`${styles.statusRow} ${isFocused ? styles.statusRowActive : ''}`}
                           style={{
-                            borderColor: isFocused ? palette.accent : palette.border,
-                            background: isFocused ? palette.accentSurface : '#fff',
+                            borderColor: isFocused ? 'rgba(253, 75, 35, 0.88)' : undefined,
+                            background: isFocused ? 'rgba(253, 75, 35, 0.08)' : undefined,
                             boxShadow: isFocused
-                              ? `0 18px 36px ${palette.accentSoft}`
+                              ? '0 18px 36px rgba(253, 75, 35, 0.18)'
                               : undefined,
                           } as CSSProperties}
                           role="button"
@@ -947,7 +1009,7 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
 
               <SimpleGrid cols={{ base: 1, md: 3 }} spacing="md">
                 <Paper withBorder radius="lg" p="md" className={styles.stepCard}>
-                  <ThemeIcon size="xl" radius="xl" variant="light" color="blue">
+                  <ThemeIcon size="xl" radius="xl" variant="light" color="orange">
                     <IconLink size={20} />
                   </ThemeIcon>
                   <Text fw={700} mt="md">
@@ -960,7 +1022,7 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                 </Paper>
 
                 <Paper withBorder radius="lg" p="md" className={styles.stepCard}>
-                  <ThemeIcon size="xl" radius="xl" variant="light" color="violet">
+                  <ThemeIcon size="xl" radius="xl" variant="light" color="orange">
                     <IconLock size={20} />
                   </ThemeIcon>
                   <Text fw={700} mt="md">
@@ -1027,11 +1089,12 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                       <Card.Section
                         className={styles.channelVisual}
                         style={{
-                          background: palette.accentSurface,
-                          borderBottom: `1px solid ${palette.border}`,
+                          background:
+                            'linear-gradient(135deg, rgba(17, 17, 17, 0.985), rgba(17, 17, 17, 0.92))',
+                          borderBottom: '1px solid rgba(17, 17, 17, 0.9)',
                         }}
                       >
-                        <Group justify="space-between" align="flex-start" mb="xl">
+                        <Group justify="space-between" align="center" w="100%">
                           <Badge
                             className={styles.channelStatusBadge}
                             color={getIntegrationStatusColor(platform.status)}
@@ -1078,7 +1141,7 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                       <Stack gap="md" p="lg" style={{ flex: 1 }}>
                         <div>
                           <Group gap="xs" wrap="wrap" mb={6}>
-                            <Text fw={700} size="lg" style={{ color: palette.text }}>
+                            <Text fw={700} size="lg">
                               {platform.platformName}
                             </Text>
                             {!platform.integrationId && platform.platformKey !== 'meta' && platform.platformKey !== 'google' ? (
@@ -1128,8 +1191,8 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                           p="sm"
                           className={styles.copyPanel}
                           style={{
-                            borderColor: palette.border,
-                            backgroundColor: palette.accentSoft,
+                            borderColor: 'rgba(253, 75, 35, 0.18)',
+                            backgroundColor: 'rgba(253, 75, 35, 0.07)',
                           }}
                         >
                           <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
@@ -1228,6 +1291,77 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
             </div>
 
             <Modal
+              opened={googleDiagnosticsOpened}
+              onClose={() => setGoogleDiagnosticsOpened(false)}
+              title="Google Ads diagnostics"
+              centered
+              size="xl"
+            >
+              <Stack gap="md">
+                {googleDiagnosticsLoading ? (
+                  <Progress value={65} animated striped radius="xl" />
+                ) : (
+                  <>
+                    <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                      <Paper withBorder radius="lg" p="md">
+                        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Credential mode</Text>
+                        <Title order={4} mt={4}>{googleDiagnostics?.credentials?.mode ?? 'unknown'}</Title>
+                        <Text size="sm" c="dimmed">
+                          Source: {googleDiagnostics?.credentials?.source ?? 'missing'} | Developer token:{' '}
+                          {googleDiagnostics?.credentials?.developerTokenConfigured ? 'configured' : 'missing'}
+                        </Text>
+                      </Paper>
+                      <Paper withBorder radius="lg" p="md">
+                        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>OAuth status</Text>
+                        <Title order={4} mt={4}>
+                          {googleDiagnostics?.refreshToken?.valid ? 'Valid' : 'Needs review'}
+                        </Title>
+                        <Text size="sm" c="dimmed">
+                          Refresh token: {googleDiagnostics?.refreshToken?.present ? 'present' : 'missing'}
+                        </Text>
+                      </Paper>
+                      <Paper withBorder radius="lg" p="md">
+                        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Accessible customers</Text>
+                        <Title order={4} mt={4}>{googleDiagnostics?.accessibleAccounts?.count ?? 0}</Title>
+                        <Text size="sm" c="dimmed">
+                          {googleDiagnostics?.accessibleAccounts?.message ?? 'Customer list loaded.'}
+                        </Text>
+                      </Paper>
+                      <Paper withBorder radius="lg" p="md">
+                        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Database readiness</Text>
+                        <Title order={4} mt={4}>{googleDiagnostics?.dbHealth?.ok ? 'Ready' : 'Needs review'}</Title>
+                        <Text size="sm" c="dimmed">Google reporting tables and seed rows.</Text>
+                      </Paper>
+                    </SimpleGrid>
+
+                    <div className="dv-table">
+                      {(googleDiagnostics?.accessibleAccounts?.accounts ?? []).map((account) => (
+                        <div className="dv-table-row" key={account.externalAccountId}>
+                          <div>
+                            <strong>{account.name ?? account.externalAccountId}</strong>
+                            <span>{account.externalAccountId}</span>
+                          </div>
+                          <span>{account.status ?? 'available'}</span>
+                        </div>
+                      ))}
+                      {(googleDiagnostics?.dbHealth?.checks ?? []).map((check) => (
+                        <div className="dv-table-row" key={check.object}>
+                          <div>
+                            <strong>{check.object}</strong>
+                            <span>{check.message ?? 'OK'}</span>
+                          </div>
+                          <Badge color={check.ok ? 'green' : 'red'} variant="light">
+                            {check.ok ? 'OK' : 'Error'}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </Stack>
+            </Modal>
+
+            <Modal
               opened={googleCredentialModalOpened}
               onClose={() => {
                 if (!googleCredentialSaving) {
@@ -1239,7 +1373,7 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
               size="lg"
             >
               <Stack gap="md">
-                <Alert color="blue" radius="lg" variant="light" icon={<IconLock size={16} />}>
+                <Alert color="orange" radius="lg" variant="light" icon={<IconLock size={16} />}>
                   These credentials are saved for this workspace only. The client secret and developer token are stored in Vault and are not shown again.
                 </Alert>
 
@@ -1323,7 +1457,7 @@ export default function IntegrationClient({ platforms }: PlatformListProps) {
                       DeepVisor is saving the selected {accountSelectionPlatform?.platformName ?? 'platform'} account and syncing recent campaign, ad group, ad, creative, and performance data.
                     </Text>
                     <Progress value={65} animated striped radius="xl" />
-                    <Alert color="blue" radius="lg" variant="light" icon={<IconClock size={16} />}>
+                    <Alert color="orange" radius="lg" variant="light" icon={<IconClock size={16} />}>
                       Keep this tab open until the sync finishes.
                     </Alert>
                   </>

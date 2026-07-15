@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/server/supabase/server';
-import { requireUserId } from '@/lib/server/actions/user/session';
-import { getOrCreateOrganizationBusinessContext } from '@/lib/server/actions/business/context';
+import { getRequiredAppContext } from '@/lib/server/actions/app/context';
+import { logAuditEvent } from '@/lib/server/audit/logAuditEvent';
 import { buildMetaOAuthUrl } from '@/lib/server/integrations/adapters/meta';
 import { buildGoogleOAuthUrl } from '@/lib/server/integrations/adapters/google';
 import {
@@ -13,6 +13,8 @@ import {
   resolveGoogleAdsCredentialsForBusiness,
   sanitizeReturnTo,
 } from '@/lib/server/integrations/service';
+import { consumeRateLimit, rateLimitResponse } from '@/lib/server/security/rateLimit';
+import { createAdminClient } from '@/lib/server/supabase/admin';
 
 function buildErrorRedirect(
   requestUrl: string,
@@ -37,8 +39,17 @@ export async function GET(
 
   try {
     const supabase = await createServerClient();
-    const userId = await requireUserId();
-    const businessContext = await getOrCreateOrganizationBusinessContext(userId);
+    const businessContext = await getRequiredAppContext(false);
+    const limiter = await consumeRateLimit({
+      identifier: `user:${businessContext.user.id}:business:${businessContext.businessId}`,
+      action: `integration.connect.${platformKey}`,
+      limit: 20,
+      windowSeconds: 60 * 60,
+    });
+
+    if (!limiter.allowed) {
+      return rateLimitResponse(limiter);
+    }
 
     const integrationPlatform = await resolvePlatformByKey(supabase, platformKey);
     if (!integrationPlatform) {
@@ -46,10 +57,24 @@ export async function GET(
     }
 
     const state = await createOAuthState(supabase, {
-      userId,
+      userId: businessContext.user.id,
       businessId: businessContext.businessId,
       platformId: integrationPlatform.id,
       returnTo,
+    });
+
+    await logAuditEvent(createAdminClient(), {
+      businessId: businessContext.businessId,
+      organizationId: businessContext.organizationId,
+      actorUserId: businessContext.user.id,
+      eventType: 'integration.connect_started',
+      resourceType: 'platform',
+      resourceId: platformKey,
+      metadata: {
+        returnTo,
+      },
+      ipAddress: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      userAgent: request.headers.get('user-agent'),
     });
 
     const baseUrl = getBaseUrl(request.url);

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Data Visualization"
+  short_description: "Help with Data Visualization tasks"
+  default_prompt: "Use (data-visualization.Name) to handle this task."

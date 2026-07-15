@@ -1,83 +1,80 @@
 import { Suspense } from 'react';
-import { EmptyCampaignState } from '@/components/campaigns/EmptyStates';
-import { resolveCurrentSelection } from '@/lib/server/actions/app/selection';
 import { getRequiredAppContext } from '@/lib/server/actions/app/context';
-import { createAdminClient } from '@/lib/server/supabase/admin';
-import { getAdAccountSyncCoverage } from '@/lib/server/repositories/ad_accounts/syncState';
-import { buildDemoReportPayload, getDemoReportFilterOptions } from '@/lib/server/reports/demo';
-import { parseReportQueryInput } from '@/lib/server/reports/query';
+import { resolveCurrentSelection } from '@/lib/server/actions/app/selection';
 import { buildReportPayload, getReportFilterOptions } from '@/lib/server/repositories/reports/buildReportPayload';
-import { ReportsClient } from './components/ReportsClient';
+import { parseReportQueryInput } from '@/lib/server/reports/query';
+import type { ReportQueryInput } from '@/lib/server/reports/types';
 import ReportsClientFallback from './components/ReportClientFallback';
+import { ReportsClient } from './components/ReportsClient';
 
-function isTruthySearchParam(value: string | string[] | undefined): boolean {
-  if (!value) {
-    return false;
-  }
+export const dynamic = 'force-dynamic';
 
-  const raw = Array.isArray(value) ? value[0] : value;
-  return raw === '1' || raw === 'true' || raw === 'yes';
+type ReportsPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function hasEntityScope(params: Record<string, string | string[] | undefined>) {
+  return Boolean(
+    params.platform_integration_id ||
+      params.ad_account_id ||
+      params.campaign_id ||
+      params.adset_id ||
+      params.ad_id
+  );
 }
 
-export default async function ReportsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
-}) {
-  const { businessId, organizationName } = await getRequiredAppContext();
-  const adminSupabase = createAdminClient();
-  const { selectedPlatformId, selectedAdAccountId } = await resolveCurrentSelection(businessId);
-  const params = await searchParams;
-  const query = parseReportQueryInput(businessId, params);
-  const demoRequested = isTruthySearchParam(params.demo);
-
-  const liveResult = demoRequested
-    ? null
-    : await Promise.all([buildReportPayload(query), getReportFilterOptions(query)]);
-
-  const livePayload = liveResult?.[0] ?? null;
-  const liveFilterOptions = liveResult?.[1] ?? null;
-
-  const hasData =
-    (livePayload?.series.length ?? 0) > 0 ||
-    (livePayload?.breakdown.rows.length ?? 0) > 0 ||
-    (livePayload?.summary.spend ?? 0) > 0 ||
-    (livePayload?.summary.impressions ?? 0) > 0;
-
-  const shouldUseDemo =
-    demoRequested || (!hasData && (liveFilterOptions?.adAccounts.length ?? 0) === 0);
-
-  const payload = shouldUseDemo
-    ? buildDemoReportPayload(query, organizationName)
-    : livePayload;
-  const filterOptions = shouldUseDemo ? getDemoReportFilterOptions() : liveFilterOptions;
-
-  const coverageTargetAdAccountId = query.adAccountIds[0] ?? selectedAdAccountId ?? null;
-  const coverageTargetPlatformIntegrationId =
-    query.platformIntegrationId ?? selectedPlatformId ?? null;
-
-  if (
-    payload &&
-    !shouldUseDemo &&
-    coverageTargetAdAccountId &&
-    coverageTargetPlatformIntegrationId
-  ) {
-    const syncCoverage = await getAdAccountSyncCoverage(adminSupabase, coverageTargetAdAccountId);
-
-    payload.meta.syncCoverage = syncCoverage;
+function scopeReportToCurrentSelection(
+  query: ReportQueryInput,
+  selection: {
+    selectedPlatformId: string | null;
+    selectedAdAccountId: string | null;
+  },
+  params: Record<string, string | string[] | undefined>
+): ReportQueryInput {
+  if (hasEntityScope(params)) {
+    return query;
   }
 
-  if (!payload || !filterOptions) {
-    return <EmptyCampaignState type="platform" />;
+  if (selection.selectedPlatformId && selection.selectedAdAccountId) {
+    return {
+      ...query,
+      scope: 'ad_account',
+      platformIntegrationId: selection.selectedPlatformId,
+      adAccountIds: [selection.selectedAdAccountId],
+      campaignIds: [],
+      adsetIds: [],
+      adIds: [],
+    };
   }
 
-  if (!shouldUseDemo && !hasData && filterOptions.adAccounts.length === 0) {
-    return <EmptyCampaignState type="platform" />;
-  }
+  return {
+    ...query,
+    scope: 'ad_account',
+    platformIntegrationId: null,
+    adAccountIds: [],
+    campaignIds: [],
+    adsetIds: [],
+    adIds: [],
+  };
+}
+
+export default async function ReportsPage({ searchParams }: ReportsPageProps) {
+  const params = (await searchParams) ?? {};
+  const { businessId } = await getRequiredAppContext();
+  const selection = await resolveCurrentSelection(businessId);
+  const query = scopeReportToCurrentSelection(
+    parseReportQueryInput(businessId, params),
+    selection,
+    params
+  );
+  const [payload, filterOptions] = await Promise.all([
+    buildReportPayload(query),
+    getReportFilterOptions(query),
+  ]);
 
   return (
     <Suspense fallback={<ReportsClientFallback />}>
-      <ReportsClient payload={payload} filterOptions={filterOptions} isDemo={shouldUseDemo} />
+      <ReportsClient payload={payload} filterOptions={filterOptions} />
     </Suspense>
   );
 }

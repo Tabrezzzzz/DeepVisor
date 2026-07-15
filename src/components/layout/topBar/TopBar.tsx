@@ -2,8 +2,11 @@ import { createServerClient } from '@/lib/server/supabase/server';
 import MobileAppChromeClient from '@/components/layout/MobileAppChromeClient';
 import TopBarClient from './TopBarClient';
 import type { Database } from '@/lib/shared/types/supabase';
-import { getCurrentSelection } from '@/lib/server/actions/app/selection';
+import { resolveCurrentSelection } from '@/lib/server/actions/app/selection';
 import { getUserNotifications } from '@/lib/server/actions/user/settings';
+import { toIntegrationStatus } from '@/lib/server/integrations/normalizers';
+import { isIntegrationConnected } from '@/lib/shared/utils/integrations';
+import { asRecord } from '@/lib/shared';
 
 type UserRow = Database['public']['Tables']['users']['Row'];
 
@@ -15,27 +18,40 @@ interface TopbarProps {
 export default async function Topbar({ user, businessId }: TopbarProps) {
   const supabase = await createServerClient();
   const notifications = await getUserNotifications(user.id, 5);
+  const resolvedSelection = await resolveCurrentSelection(businessId);
 
   const { data: integrationRows, error: integrationError } = await supabase
     .from('platform_integrations')
-    .select('id, platform_id, status, platforms ( key )')
+    .select('id, platform_id, status, integration_details, platforms ( key )')
     .eq('business_id', businessId)
-    .eq('status', "connected");
+    .order('created_at', { ascending: true });
 
   if (integrationError) {
     console.error('Error fetching platform integrations:', integrationError.message);
   }
 
-  const platformMap = new Map<string, { integrationId: string; key: string }>();
+  const platformMap = new Map<
+    string,
+    { integrationId: string; key: string; primaryExternalAccountId: string | null }
+  >();
 
   for (const row of integrationRows ?? []) {
+    if (!isIntegrationConnected(toIntegrationStatus(row.status))) {
+      continue;
+    }
+
     const platform = Array.isArray(row.platforms) ? row.platforms[0] : row.platforms;
     const key = typeof platform?.key === 'string' ? platform.key : null;
     if (!key) continue;
 
+    const details = asRecord(row.integration_details);
     platformMap.set(row.platform_id, {
       integrationId: row.id,
       key,
+      primaryExternalAccountId:
+        typeof details.primary_ad_account_external_id === 'string'
+          ? details.primary_ad_account_external_id
+          : null,
     });
   }
 
@@ -56,7 +72,7 @@ export default async function Topbar({ user, businessId }: TopbarProps) {
 
     const { data: adAccountRows, error: adAccountError } = await supabase
       .from('ad_accounts')
-      .select('id, name, platform_id, external_account_id')
+      .select('id, name, platform_id, external_account_id, last_synced')
       .eq('business_id', businessId)
       .in('platform_id', platformIds);
 
@@ -64,21 +80,36 @@ export default async function Topbar({ user, businessId }: TopbarProps) {
       console.error('Error fetching ad accounts:', adAccountError.message);
     }
 
-    adAccounts = (adAccountRows ?? []).map((row) => ({
-      id: row.id,
-      name: row.name,
-      platform_integration_id: platformMap.get(row.platform_id)?.integrationId ?? row.platform_id,
-      external_account_id: row.external_account_id,
-    }));
+    adAccounts = (adAccountRows ?? [])
+      .map((row) => ({
+        id: row.id,
+        name: row.name,
+        platform_integration_id: platformMap.get(row.platform_id)?.integrationId ?? row.platform_id,
+        external_account_id: row.external_account_id,
+        last_synced: row.last_synced,
+        primary:
+          Boolean(row.external_account_id) &&
+          row.external_account_id === platformMap.get(row.platform_id)?.primaryExternalAccountId,
+      }))
+      .sort((left, right) => {
+        if (left.primary !== right.primary) {
+          return left.primary ? -1 : 1;
+        }
+
+        const leftSynced = left.last_synced ? new Date(left.last_synced).getTime() : 0;
+        const rightSynced = right.last_synced ? new Date(right.last_synced).getTime() : 0;
+        if (leftSynced !== rightSynced) {
+          return rightSynced - leftSynced;
+        }
+
+        return (left.name ?? left.external_account_id ?? '').localeCompare(
+          right.name ?? right.external_account_id ?? ''
+        );
+      });
   }
 
-  const {
-    selectedPlatformId: platformCookie,
-    selectedAdAccountId: accountCookie,
-  } = await getCurrentSelection();
-
   const selectedPlatformId =
-    platforms.find((platform) => platform.id === platformCookie)?.id ??
+    platforms.find((platform) => platform.id === resolvedSelection.selectedPlatformId)?.id ??
     platforms[0]?.id ??
     null;
 
@@ -87,7 +118,7 @@ export default async function Topbar({ user, businessId }: TopbarProps) {
     : [];
 
   const selectedAccountId =
-    accountsForPlatform.find((account) => account.id === accountCookie)?.id ??
+    accountsForPlatform.find((account) => account.id === resolvedSelection.selectedAdAccountId)?.id ??
     accountsForPlatform[0]?.id ??
     null;
 
@@ -96,6 +127,7 @@ export default async function Topbar({ user, businessId }: TopbarProps) {
       <div className="hidden h-full md:block">
         <TopBarClient
           userInfo={user}
+          businessId={businessId}
           platforms={platforms}
           adAccounts={adAccounts}
           notifications={notifications}
@@ -105,6 +137,7 @@ export default async function Topbar({ user, businessId }: TopbarProps) {
       </div>
       <MobileAppChromeClient
         userInfo={user}
+        businessId={businessId}
         platforms={platforms}
         adAccounts={adAccounts}
         notifications={notifications}

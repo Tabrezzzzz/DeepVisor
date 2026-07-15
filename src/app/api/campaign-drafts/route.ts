@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { getRequiredAppContext } from '@/lib/server/actions/app/context';
 import { resolveCurrentSelection } from '@/lib/server/actions/app/selection';
+import { logAuditEvent } from '@/lib/server/audit/logAuditEvent';
+import { consumeRateLimit, rateLimitResponse } from '@/lib/server/security/rateLimit';
 import { createAdminClient } from '@/lib/server/supabase/admin';
 import { createCampaignDraft, getCampaignDraftById } from '@/lib/server/campaigns/drafts';
 import type { CampaignDraftPayload } from '@/lib/shared/types/campaignDrafts';
@@ -31,22 +34,41 @@ function optionalString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
+const saveCampaignDraftSchema = z.object({
+  draftId: z.string().uuid().nullable().optional(),
+  title: z.string().trim().min(1).max(160).nullable().optional(),
+  reviewNotes: z.string().trim().max(2000).nullable().optional(),
+  payloadJson: z.unknown().refine(isCampaignDraftPayload, 'Missing campaign draft payload'),
+});
+
 export async function POST(request: NextRequest) {
   try {
-    const { user, businessId } = await getRequiredAppContext();
-    const body = (await request.json().catch(() => ({}))) as SaveCampaignDraftRequest;
-    const payloadJson = body.payloadJson;
+    const { user, businessId, organizationId } = await getRequiredAppContext();
+    const limiter = await consumeRateLimit({
+      identifier: `user:${user.id}:business:${businessId}`,
+      action: 'campaign.draft.save',
+      limit: 40,
+      windowSeconds: 60 * 60,
+    });
 
-    if (!isCampaignDraftPayload(payloadJson)) {
+    if (!limiter.allowed) {
+      return rateLimitResponse(limiter);
+    }
+
+    const parsed = saveCampaignDraftSchema.safeParse(await request.json().catch(() => null));
+
+    if (!parsed.success) {
       return NextResponse.json(
         {
           success: false,
-          error: 'Missing campaign draft payload',
+          error: 'Invalid campaign draft payload',
         },
         { status: 400 }
       );
     }
 
+    const body = parsed.data as SaveCampaignDraftRequest;
+    const payloadJson = body.payloadJson as CampaignDraftPayload;
     const { selectedPlatformId, selectedAdAccountId } = await resolveCurrentSelection(businessId);
     if (!selectedPlatformId || !selectedAdAccountId) {
       return NextResponse.json(
@@ -150,6 +172,23 @@ export async function POST(request: NextRequest) {
         throw error ?? new Error('Failed to update campaign draft');
       }
 
+      await logAuditEvent(supabase, {
+        businessId,
+        organizationId,
+        actorUserId: user.id,
+        eventType: 'campaign.draft_updated',
+        resourceType: 'campaign_draft',
+        resourceId: data.id,
+        platformIntegrationId: integration.id,
+        metadata: {
+          adAccountId: adAccount.id,
+          mode: payloadJson.mode,
+          version: (existingDraft.version ?? 1) + 1,
+        },
+        ipAddress: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? request.headers.get('x-real-ip'),
+        userAgent: request.headers.get('user-agent'),
+      });
+
       return NextResponse.json({
         success: true,
         data: {
@@ -169,6 +208,23 @@ export async function POST(request: NextRequest) {
       payloadJson,
       reviewNotes,
       sourceActionId: 'meta_lead_helper',
+    });
+
+    await logAuditEvent(supabase, {
+      businessId,
+      organizationId,
+      actorUserId: user.id,
+      eventType: 'campaign.draft_created',
+      resourceType: 'campaign_draft',
+      resourceId: draft.id,
+      platformIntegrationId: integration.id,
+      metadata: {
+        adAccountId: adAccount.id,
+        mode: payloadJson.mode,
+        sourceActionId: 'meta_lead_helper',
+      },
+      ipAddress: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? request.headers.get('x-real-ip'),
+      userAgent: request.headers.get('user-agent'),
     });
 
     return NextResponse.json({

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Visual Hierarchy"
+  short_description: "Help with Visual Hierarchy tasks"
+  default_prompt: "Use (visual-hierarchy.Name) to handle this task."

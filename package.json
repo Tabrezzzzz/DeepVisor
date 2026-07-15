@@ -8,6 +8,12 @@
     "start": "next start",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "typecheck": "tsc --noEmit --pretty false",
+    "test": "vitest run",
+    "migrations:check": "node scripts/validate-migrations.mjs",
+    "service-role:audit": "node scripts/audit-service-role-routes.mjs",
+    "mobile:audit": "node scripts/audit-mobile-optimization.mjs",
+    "verify": "npm run lint && npm run typecheck && npm run migrations:check && npm test && npm run build",
     "types:supabase": "npx supabase gen types typescript --linked --schema public,ai > src/lib/shared/types/supabase.ts"
   },
   "dependencies": {
@@ -105,7 +111,8 @@
     "postcss-simple-vars": "^7.0.1",
     "tailwindcss": "^3.4.17",
     "ts-node": "^10.9.2",
-    "typescript": "5.7.3"
+    "typescript": "5.7.3",
+    "vitest": "^4.1.10"
   },
   "type": "module"
 }

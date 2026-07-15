@@ -21,6 +21,7 @@ import { syncMetaAds } from './syncMetaAds';
 import { syncMetaAdsets } from './syncMetaAdsets';
 import { syncMetaCampaigns } from './syncMetaCampaigns';
 import { discoverMetaAdAccounts } from './discoverMetaAdAccounts';
+import { syncMetaLeads } from './syncMetaLeads';
 import { syncMetaPerformance } from './syncMetaPerformance';
 
 type AdAccountRow = Database['public']['Tables']['ad_accounts']['Row'];
@@ -370,6 +371,28 @@ export async function syncMetaBusinessPlatform(input: {
         creativesSynced: creatives.adCreatives,
       },
     });
+
+    try {
+      const leadSync = await syncMetaLeads({
+        supabase: input.supabase,
+        businessId: input.businessId,
+        platformIntegrationId: input.platformIntegrationId,
+        adAccount: primaryAdAccount,
+        campaigns: campaigns.rows,
+        adsets: adsets.rows,
+        ads: ads.rows,
+        accessToken: input.accessToken,
+        syncedAt: input.syncedAt,
+      });
+
+      if (leadSync.errors.length > 0) {
+        console.warn('Meta lead sync completed with errors:', leadSync);
+      } else {
+        console.info('Meta lead sync completed:', leadSync);
+      }
+    } catch (error) {
+      console.warn('Meta lead sync skipped:', error);
+    }
 
     const performance = await runMetaSyncStage('performance', () =>
       syncMetaPerformance({

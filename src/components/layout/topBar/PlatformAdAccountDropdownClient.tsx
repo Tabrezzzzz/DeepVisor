@@ -2,18 +2,20 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { Badge, Group, Menu, Text, ThemeIcon, UnstyledButton } from '@mantine/core';
-import { IconCheck, IconChevronDown } from '@tabler/icons-react';
+import { Check, ChevronDown } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { getPlatformIcon } from '@/components/utils/utils';
 import { setSelection } from './setSelection';
 
 interface PlatformAdAccountDropdownClientProps {
+  businessId: string;
   platforms: Array<{ id: string; platform_name: string }>;
   adAccounts: Array<{
     id: string;
     name: string | null;
     platform_integration_id: string;
     external_account_id: string | null;
+    last_synced?: string | null;
   }>;
   initialPlatformId?: string | null;
   initialAccountId?: string | null;
@@ -39,38 +41,16 @@ const PLATFORM_LABELS: Record<string, string> = {
 
 const PLATFORM_DISPLAY_ORDER = ['meta', 'google', 'tiktok'];
 
-const DEMO_WORKSPACE_OPTIONS: WorkspaceOption[] = [
-  {
-    value: 'preview-meta',
-    platformId: null,
-    accountId: null,
-    platformKey: 'meta',
-    platformLabel: 'Meta',
-    accountLabel: 'DeepVisor Main Account',
-    accountIdentifier: 'act_98345122',
-    preview: true,
-  },
-  {
-    value: 'preview-google',
-    platformId: null,
-    accountId: null,
-    platformKey: 'google',
-    platformLabel: 'Google Ads',
-    accountLabel: 'DeepVisor Search Main',
-    accountIdentifier: '482-190-7721',
-    preview: true,
-  },
-  {
-    value: 'preview-tiktok',
-    platformId: null,
-    accountId: null,
-    platformKey: 'tiktok',
-    platformLabel: 'TikTok Ads',
-    accountLabel: 'DeepVisor TikTok Core',
-    accountIdentifier: '7183-4401-55',
-    preview: true,
-  },
-];
+const EMPTY_WORKSPACE_OPTION: WorkspaceOption = {
+  value: 'no-connected-platform',
+  platformId: null,
+  accountId: null,
+  platformKey: 'meta',
+  platformLabel: 'No platform',
+  accountLabel: 'Connect an ad account',
+  accountIdentifier: null,
+  preview: false,
+};
 
 function formatPlatformLabel(platformKey: string): string {
   return PLATFORM_LABELS[platformKey] ?? platformKey.charAt(0).toUpperCase() + platformKey.slice(1);
@@ -86,7 +66,7 @@ function formatAccountIdentifier(value: string | null): string | null {
     return value;
   }
 
-  return `•••${compactValue.slice(-4)}`;
+  return `...${compactValue.slice(-4)}`;
 }
 
 function sortByPlatformOrder(options: WorkspaceOption[]): WorkspaceOption[] {
@@ -100,7 +80,12 @@ function sortByPlatformOrder(options: WorkspaceOption[]): WorkspaceOption[] {
       return safeLeft - safeRight;
     }
 
-    return left.platformLabel.localeCompare(right.platformLabel);
+    const platformCompare = left.platformLabel.localeCompare(right.platformLabel);
+    if (platformCompare !== 0) {
+      return platformCompare;
+    }
+
+    return left.accountLabel.localeCompare(right.accountLabel);
   });
 }
 
@@ -118,8 +103,14 @@ function resolvePlatformTheme(platformKey: string): 'default' | 'meta' | 'google
   }
 }
 
+function formatAccountLine(option: WorkspaceOption): string {
+  const identifier = formatAccountIdentifier(option.accountIdentifier);
+  return identifier ? `${option.accountLabel} - ${identifier}` : option.accountLabel;
+}
+
 export default function PlatformAdAccountDropdownClient({
   platforms,
+  businessId,
   adAccounts,
   initialPlatformId,
   initialAccountId,
@@ -130,31 +121,48 @@ export default function PlatformAdAccountDropdownClient({
 
   const liveOptions = useMemo(() => {
     return sortByPlatformOrder(
-      platforms.map((platform) => {
-        const primaryAccount =
-          adAccounts.find((account) => account.platform_integration_id === platform.id) ?? null;
+      platforms.flatMap((platform): WorkspaceOption[] => {
+        const platformKey = platform.platform_name.toLowerCase();
+        const platformAccounts = adAccounts.filter(
+          (account) => account.platform_integration_id === platform.id
+        );
 
-        return {
-          value: `live:${platform.id}:${primaryAccount?.id ?? 'none'}`,
-          platformId: platform.id,
-          accountId: primaryAccount?.id ?? null,
-          platformKey: platform.platform_name.toLowerCase(),
-          platformLabel: formatPlatformLabel(platform.platform_name.toLowerCase()),
-          accountLabel: primaryAccount?.name ?? 'No ad account connected',
-          accountIdentifier: primaryAccount?.external_account_id ?? null,
-          preview: false,
-        } satisfies WorkspaceOption;
+        if (platformAccounts.length === 0) {
+          return [
+            {
+              value: `live:${platform.id}:none`,
+              platformId: platform.id,
+              accountId: null,
+              platformKey,
+              platformLabel: formatPlatformLabel(platformKey),
+              accountLabel: 'No ad account selected',
+              accountIdentifier: null,
+              preview: false,
+            } satisfies WorkspaceOption,
+          ];
+        }
+
+        return platformAccounts.map(
+          (account) =>
+            ({
+              value: `live:${platform.id}:${account.id}`,
+              platformId: platform.id,
+              accountId: account.id,
+              platformKey,
+              platformLabel: formatPlatformLabel(platformKey),
+              accountLabel: account.name ?? account.external_account_id ?? 'Unnamed ad account',
+              accountIdentifier: account.external_account_id,
+              preview: false,
+            }) satisfies WorkspaceOption
+        );
       })
     );
   }, [adAccounts, platforms]);
 
-  const previewOptions = useMemo(() => {
-    const livePlatformKeys = new Set(liveOptions.map((option) => option.platformKey));
-    return DEMO_WORKSPACE_OPTIONS.filter((option) => !livePlatformKeys.has(option.platformKey));
-  }, [liveOptions]);
+  const previewOptions = useMemo<WorkspaceOption[]>(() => [], []);
 
   const workspaceOptions = useMemo(
-    () => [...liveOptions, ...previewOptions],
+    () => (liveOptions.length > 0 ? [...liveOptions, ...previewOptions] : [EMPTY_WORKSPACE_OPTION]),
     [liveOptions, previewOptions]
   );
 
@@ -218,6 +226,7 @@ export default function PlatformAdAccountDropdownClient({
 
     startTransition(async () => {
       await setSelection({
+        businessId,
         platformId: option.platformId,
         accountRowId: option.accountId,
       });
@@ -244,15 +253,13 @@ export default function PlatformAdAccountDropdownClient({
     <Menu shadow="md" width={menuWidth} position={compact ? 'bottom' : 'bottom-start'}>
       <Menu.Target>
         <UnstyledButton
+          className="dv-platform-selector"
           disabled={isPending}
           style={{
             width: compact || drawer ? '100%' : undefined,
             minWidth: compact ? 0 : drawer ? '100%' : 290,
             padding: compact ? '8px 10px' : '10px 14px',
             borderRadius: compact ? 12 : 14,
-            border: `1px solid ${borderColor}`,
-            background: 'rgba(255, 255, 255, 0.78)',
-            boxShadow: '0 6px 18px rgba(15, 23, 42, 0.04)',
           }}
         >
           <Group justify="space-between" align="center" wrap="nowrap" gap="sm">
@@ -273,24 +280,21 @@ export default function PlatformAdAccountDropdownClient({
               <div style={{ minWidth: 0, flex: 1 }}>
                 <Group gap={6} wrap={compact ? 'nowrap' : 'wrap'}>
                   <Text size={compact ? 'xs' : 'sm'} fw={700} lineClamp={1}>
-                      {selectedOption.platformLabel}
-                    </Text>
+                    {selectedOption.platformLabel}
+                  </Text>
                   {selectedOption.preview && !compact ? (
                     <Badge size="xs" color="gray" variant="light">
                       Preview
                     </Badge>
                   ) : null}
                 </Group>
-                <Text size="xs" c="dimmed" lineClamp={1}>
-                  {selectedOption.accountLabel}
-                  {formatAccountIdentifier(selectedOption.accountIdentifier)
-                    ? ` · ${formatAccountIdentifier(selectedOption.accountIdentifier)}`
-                    : ''}
+                <Text size="xs" c="dimmed" lineClamp={1} className="dv-platform-selector-muted">
+                  {formatAccountLine(selectedOption)}
                 </Text>
               </div>
             </Group>
 
-            <IconChevronDown size={16} color="#6b7280" />
+            <ChevronDown className="dv-platform-selector-chevron" size={16} strokeWidth={1.6} />
           </Group>
         </UnstyledButton>
       </Menu.Target>
@@ -298,8 +302,8 @@ export default function PlatformAdAccountDropdownClient({
       <Menu.Dropdown>
         <Menu.Label>Platforms & ad accounts</Menu.Label>
         <Text size="xs" c="dimmed" px="sm" pb="xs">
-          Switch the workspace view by platform. Each platform carries one primary ad account in
-          this version of the selector.
+          Switch the workspace view by platform and ad account. Connected rows use the synced
+          account data stored in DeepVisor.
         </Text>
         {hasPreviewOptions ? (
           <Text size="xs" c="dimmed" px="sm" pb="sm">
@@ -339,16 +343,13 @@ export default function PlatformAdAccountDropdownClient({
                         </Badge>
                       ) : null}
                     </Group>
-                    <Text size="xs" c="dimmed" lineClamp={1}>
-                      {option.accountLabel}
-                      {formatAccountIdentifier(option.accountIdentifier)
-                        ? ` · ${formatAccountIdentifier(option.accountIdentifier)}`
-                        : ''}
+                    <Text size="xs" c="dimmed" lineClamp={1} className="dv-platform-selector-muted">
+                      {formatAccountLine(option)}
                     </Text>
                   </div>
                 </Group>
 
-                {isActive ? <IconCheck size={16} color={accentColor} /> : null}
+                {isActive ? <Check size={16} color={accentColor} strokeWidth={1.8} /> : null}
               </Group>
             </Menu.Item>
           );

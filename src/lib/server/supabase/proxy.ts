@@ -23,11 +23,13 @@ function normalizePathname(pathname: string): string {
 function redirectWithSupabaseCookies(
     request: NextRequest,
     supabaseResponse: NextResponse,
-    pathname: string
+    pathname: string,
+    requestId: string
 ) {
     const url = new URL(pathname, getForwardedOrigin(request.headers, request.nextUrl.origin));
     url.search = '';
     const response = NextResponse.redirect(url);
+    response.headers.set('x-request-id', requestId);
 
     supabaseResponse.cookies.getAll().forEach((cookie) => {
         response.cookies.set(cookie.name, cookie.value, cookie);
@@ -36,10 +38,21 @@ function redirectWithSupabaseCookies(
     return response;
 }
 
-export async function updateSession(request: NextRequest) {
-    let supabaseResponse = NextResponse.next({
-        request,
-    })
+function nextWithRequestId(request: NextRequest, requestId: string) {
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set('x-request-id', requestId);
+
+    const response = NextResponse.next({
+        request: {
+            headers: requestHeaders,
+        },
+    });
+    response.headers.set('x-request-id', requestId);
+    return response;
+}
+
+export async function updateSession(request: NextRequest, requestId: string) {
+    let supabaseResponse = nextWithRequestId(request, requestId);
 
     const supabase = createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -51,9 +64,7 @@ export async function updateSession(request: NextRequest) {
                 },
                 setAll(cookiesToSet) {
                     cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-                    supabaseResponse = NextResponse.next({
-                        request,
-                    })
+                    supabaseResponse = nextWithRequestId(request, requestId);
                     cookiesToSet.forEach(({ name, value, options }) =>
                         supabaseResponse.cookies.set(name, value, options)
                     )
@@ -75,7 +86,10 @@ export async function updateSession(request: NextRequest) {
     const pathname = normalizePathname(request.nextUrl.pathname);
     const isRootPage = pathname === '/';
     const isLoginPage = pathname.startsWith('/login');
-    const isSignUpPage = pathname.startsWith('/sign-up');
+    const isSignUpPage =
+        pathname.startsWith('/sign-up') ||
+        pathname.startsWith('/signup') ||
+        pathname.startsWith('/register');
     const isPublicRoute = PUBLIC_ROUTES.has(pathname);
     const isServerActionRequest = request.headers.has('next-action');
 
@@ -85,14 +99,14 @@ export async function updateSession(request: NextRequest) {
 
     // Handle unauthenticated user trying to access protected routes
     if (!user && !isLoginPage && !isSignUpPage && !isPublicRoute) {
-        return redirectWithSupabaseCookies(request, supabaseResponse, '/login');
+        return redirectWithSupabaseCookies(request, supabaseResponse, '/login', requestId);
     }
 
     // Handle authenticated user trying to access auth/public entry pages.
     // Keep this redirect local to avoid an entry-page -> API redirect bounce loop
     // if the browser retries /login while a valid session cookie is present.
     if (user && (isRootPage || isLoginPage || isSignUpPage)) {
-        return redirectWithSupabaseCookies(request, supabaseResponse, '/onboarding');
+        return redirectWithSupabaseCookies(request, supabaseResponse, '/api/auth/redirect', requestId);
     }
 
 

@@ -109,11 +109,11 @@ function formatReportDateRange(startDate: string, endDate: string) {
 
 function getLevelColor(level: ReportBreakdownRow['level']) {
   if (level === 'campaign') {
-    return 'blue';
+    return 'orange';
   }
 
   if (level === 'adset') {
-    return 'violet';
+    return 'gray';
   }
 
   return 'teal';

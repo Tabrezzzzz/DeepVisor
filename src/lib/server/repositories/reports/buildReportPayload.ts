@@ -41,6 +41,7 @@ type MetricsRow = {
   messages: number;
   calls: number;
   currency_code: string | null;
+  hasSourceDate?: boolean;
 };
 
 type ReportEntityDailyViewRow =
@@ -260,7 +261,7 @@ type BuildReportPayloadOptions = {
 };
 
 function isSummaryRangeReport(query: ReportQueryInput): boolean {
-  return query.scope === 'ad_account' || query.rangeMode === 'max';
+  return query.rangeMode === 'max';
 }
 
 const REPORT_AUDIENCE_BREAKDOWN_TYPES = [
@@ -294,6 +295,10 @@ function monthEnd(value: string): string {
   return toIsoDate(new Date(Date.UTC(year, month, 0)));
 }
 
+function monthStart(value: string): string {
+  return `${value.slice(0, 7)}-01`;
+}
+
 function minDate(current: string | null, candidate: string | null): string | null {
   if (!candidate) {
     return current;
@@ -316,6 +321,15 @@ function maxDate(current: string | null, candidate: string | null): string | nul
   }
 
   return current;
+}
+
+function isUuid(value: string | null | undefined): value is string {
+  return Boolean(
+    value &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        value
+      )
+  );
 }
 
 function isLikelyActiveStatus(status: string | null | undefined): boolean {
@@ -735,6 +749,10 @@ async function getAdAccounts(
   let platformId: string | null = null;
 
   if (input.platformIntegrationId) {
+    if (!isUuid(input.platformIntegrationId)) {
+      return [];
+    }
+
     const { data, error } = await supabase
       .from('platform_integrations')
       .select('platform_id')
@@ -747,6 +765,10 @@ async function getAdAccounts(
     }
 
     platformId = data?.platform_id ?? null;
+
+    if (!platformId) {
+      return [];
+    }
   }
 
   let query = supabase
@@ -1293,6 +1315,7 @@ async function buildAdAccountSummaryMetricRows(
 
   return rows.map((row) => ({
     day: row.end_date ?? row.start_date ?? input.fallbackDay,
+    hasSourceDate: Boolean(row.end_date ?? row.start_date),
     currency_code: row.currency_code ?? null,
     spend: toNumber(row.spend),
     reach: toNumber(row.reach),
@@ -1366,6 +1389,7 @@ async function buildSummaryMetricRows(
 
   return rows.map((row) => ({
     day: row.end_date ?? row.start_date ?? input.fallbackDay,
+    hasSourceDate: Boolean(row.end_date ?? row.start_date),
     currency_code: row.currency_code ?? null,
     spend: toNumber(row.spend),
     reach: toNumber(row.reach),
@@ -1495,7 +1519,9 @@ async function buildAdAccountFullHistoryMetricRows(
       dateTo: input.query.dateTo,
     }),
   ]);
-  const rows = [...monthlyRows, ...dailyRows];
+  const openMonthStart = monthStart(input.query.dateTo);
+  const closedMonthlyRows = monthlyRows.filter((row) => row.day < openMonthStart);
+  const rows = [...closedMonthlyRows, ...dailyRows];
 
   if (rows.length > 0) {
     return rows;
@@ -3218,20 +3244,26 @@ export async function buildReportPayload(
             adAccountIds,
             fallbackDay: effectiveQuery.dateTo,
           })
-      : Promise.resolve<MetricsRow[] | null>(null);
+    : Promise.resolve<MetricsRow[] | null>(null);
   const previousRange =
     effectiveQuery.compareMode === 'previous_period' ? getPreviousPeriodRange(effectiveQuery) : null;
   const currentRowsPromise = includeMetrics
     ? isSummaryRangeReport(effectiveQuery)
       ? summaryRowsPromise.then((summaryMetricRows) =>
-          effectiveQuery.scope === 'ad_account'
-            ? buildAdAccountFullHistoryMetricRows(supabase, {
-                query: effectiveQuery,
-                context,
-                adAccountIds,
-                fallbackRows: summaryMetricRows ?? [],
-              })
-            : summaryMetricRows ?? []
+          {
+            const datedSummaryRows = (summaryMetricRows ?? []).filter(
+              (row) => row.hasSourceDate
+            );
+
+            return effectiveQuery.scope === 'ad_account'
+              ? buildAdAccountFullHistoryMetricRows(supabase, {
+                  query: effectiveQuery,
+                  context,
+                  adAccountIds,
+                  fallbackRows: datedSummaryRows,
+                })
+              : datedSummaryRows;
+          }
         )
       : buildTopLevelMetricsRows(
           supabase,

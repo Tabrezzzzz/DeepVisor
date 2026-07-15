@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireInternalRequest } from '@/lib/server/security/internalAuth';
 import { createAdminClient } from '@/lib/server/supabase/admin';
 import { syncConnectedBusinessPlatforms } from '@/lib/server/sync';
 import type {
@@ -11,57 +12,12 @@ type RefetchAdAccountsRequest = {
   platform?: SupportedIntegrationPlatform;
 };
 
-function getRequestApiKey(request: NextRequest): string | null {
-  const apiKeyHeader = request.headers.get('x-internal-api-key');
-  if (apiKeyHeader) {
-    return apiKeyHeader;
-  }
-
-  const authorization = request.headers.get('authorization');
-  if (!authorization) {
-    return null;
-  }
-
-  const [scheme, token] = authorization.split(' ');
-  if (scheme?.toLowerCase() !== 'bearer' || !token) {
-    return null;
-  }
-
-  return token;
-}
-
-function assertAuthorized(request: NextRequest): NextResponse | null {
-  const expectedApiKey = process.env.INTERNAL_API_KEY;
-  if (!expectedApiKey) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'INTERNAL_API_KEY is not configured',
-      } satisfies RefetchAdAccountsResponse,
-      { status: 500 }
-    );
-  }
-
-  const requestApiKey = getRequestApiKey(request);
-  if (!requestApiKey || requestApiKey !== expectedApiKey) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Unauthorized',
-      } satisfies RefetchAdAccountsResponse,
-      { status: 401 }
-    );
-  }
-
-  return null;
-}
-
 function normalizePlatform(value: unknown): SupportedIntegrationPlatform | undefined {
   return value === 'meta' ? 'meta' : undefined;
 }
 
 export async function POST(request: NextRequest) {
-  const authError = assertAuthorized(request);
+  const authError = requireInternalRequest(request);
   if (authError) {
     return authError;
   }

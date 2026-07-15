@@ -1,0 +1,4 @@
+interface:
+  display_name: "Experience Map"
+  short_description: "Help with Experience Map tasks"
+  default_prompt: "Use (experience-map.Name) to handle this task."

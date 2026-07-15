@@ -1,0 +1,4 @@
+interface:
+  display_name: "Design Principles"
+  short_description: "Help with Design Principles tasks"
+  default_prompt: "Use (design-principles.Name) to handle this task."

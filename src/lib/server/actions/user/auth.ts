@@ -2,11 +2,78 @@
 
 // ===== AUTHENTICATION ACTIONS =====
 
+import crypto from "node:crypto";
+import { headers } from "next/headers";
 import { createSupabaseClient } from "@/lib/server/supabase/server";
 import { type ApiResponse } from "@/lib/shared/types/api";
 import { fromSupabaseAuthError } from "@/lib/server/supabase/authError";
-import { EmailOtpType } from "@supabase/supabase-js";
-import { ok } from "@/lib/shared/utils/responses";
+import type { EmailOtpType } from "@supabase/supabase-js";
+import { ErrorCode } from "@/lib/shared";
+import { consumeRateLimit } from "@/lib/server/security/rateLimit";
+import { fail, ok } from "@/lib/shared/utils/responses";
+
+async function getActionClientIp(): Promise<string> {
+    const headerStore = await headers();
+    return (
+        headerStore.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+        headerStore.get('x-real-ip') ||
+        'unknown'
+    );
+}
+
+function normalizeEmail(value: string): string {
+    return value.trim().toLowerCase();
+}
+
+function hashIdentifier(value: string): string {
+    return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+async function enforceAuthActionLimit(input: {
+    action: string;
+    email?: string;
+    ipLimit: number;
+    emailLimit?: number;
+}): Promise<ApiResponse<never> | null> {
+    const ip = await getActionClientIp();
+    const ipLimiter = await consumeRateLimit({
+        identifier: `ip:${ip}`,
+        action: input.action,
+        limit: input.ipLimit,
+        windowSeconds: 60 * 60,
+    });
+
+    if (!ipLimiter.allowed) {
+        return fail('Rate limit exceeded', ErrorCode.RATE_LIMITED, {
+            userMessage: 'Too many requests. Please wait and try again later.',
+            details: {
+                retryAfterSeconds: ipLimiter.retryAfterSeconds,
+                resetAt: ipLimiter.resetAt,
+            },
+        });
+    }
+
+    if (input.email && input.emailLimit) {
+        const emailLimiter = await consumeRateLimit({
+            identifier: `email:${hashIdentifier(normalizeEmail(input.email))}`,
+            action: input.action,
+            limit: input.emailLimit,
+            windowSeconds: 60 * 60,
+        });
+
+        if (!emailLimiter.allowed) {
+            return fail('Rate limit exceeded', ErrorCode.RATE_LIMITED, {
+                userMessage: 'Too many requests. Please wait and try again later.',
+                details: {
+                    retryAfterSeconds: emailLimiter.retryAfterSeconds,
+                    resetAt: emailLimiter.resetAt,
+                },
+            });
+        }
+    }
+
+    return null;
+}
 
 /**
  * Handles user login with email and password
@@ -16,6 +83,17 @@ import { ok } from "@/lib/shared/utils/responses";
 */
 export async function handleLogin(email: string, password: string): Promise<ApiResponse<null>> {
     try {
+        const limited = await enforceAuthActionLimit({
+            action: 'auth.password_login',
+            email,
+            ipLimit: 60,
+            emailLimit: 20,
+        });
+
+        if (limited) {
+            return limited;
+        }
+
         const supabase = await createSupabaseClient();
         const { error } = await supabase.auth.signInWithPassword({ email, password });
 
@@ -46,6 +124,17 @@ export async function handleSignUp(
     phone_number: string
 ): Promise<ApiResponse<{ userId: string }>> {
     try {
+        const limited = await enforceAuthActionLimit({
+            action: 'auth.signup',
+            email,
+            ipLimit: 30,
+            emailLimit: 5,
+        });
+
+        if (limited) {
+            return limited;
+        }
+
         const supabase = await createSupabaseClient();
 
         const { data, error } = await supabase.auth.signUp({
@@ -144,6 +233,17 @@ export async function handleEmailVerificationFromUrl(params: {
 */
 export async function handleResendVerificationEmail(email: string): Promise<ApiResponse<null>> {
     try {
+        const limited = await enforceAuthActionLimit({
+            action: 'auth.resend_verification',
+            email,
+            ipLimit: 20,
+            emailLimit: 3,
+        });
+
+        if (limited) {
+            return limited;
+        }
+
         const supabase = await createSupabaseClient();
 
         const { error } = await supabase.auth.resend({

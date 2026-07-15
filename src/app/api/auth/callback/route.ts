@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { resolvePostAuthRedirectPath } from '@/lib/server/auth/postAuthRedirect';
+import { consumeRateLimit, getClientIp, rateLimitResponse } from '@/lib/server/security/rateLimit';
 import { createServerClient } from '@/lib/server/supabase/server';
 import { getForwardedOrigin } from '@/lib/server/http/origin';
 
@@ -14,6 +15,17 @@ function safeNextPath(value: string | null): string {
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const origin = getForwardedOrigin(request.headers, requestUrl.origin);
+  const limiter = await consumeRateLimit({
+    identifier: `ip:${getClientIp(request)}`,
+    action: 'auth.callback',
+    limit: 120,
+    windowSeconds: 60 * 60,
+  });
+
+  if (!limiter.allowed) {
+    return rateLimitResponse(limiter);
+  }
+
   const code = requestUrl.searchParams.get('code');
   const oauthError = requestUrl.searchParams.get('error');
 

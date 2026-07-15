@@ -1,0 +1,4 @@
+interface:
+  display_name: "Spacing System"
+  short_description: "Help with Spacing System tasks"
+  default_prompt: "Use (spacing-system.Name) to handle this task."

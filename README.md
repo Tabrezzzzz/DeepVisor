@@ -22,7 +22,7 @@ DeepVisor is not meant to be another analytics wall. The product direction is si
 
 ## Current Product Scope
 
-- Meta is the primary live integration today
+- Meta and Google Ads are active integration tracks for connect, sync, and reporting
 - one primary ad account is selected per connected platform
 - the first sync is recent-first, then full history is backfilled in the background
 - recommendations are explainable and review-first
@@ -45,6 +45,11 @@ npm run dev
 Useful scripts:
 
 - `npm run build`: production build check
+- `npm run lint`: ESLint check
+- `npm run typecheck`: TypeScript check
+- `npm run migrations:check`: validates Supabase migration filenames/order/basic SQL integrity
+- `npm test`: Vitest unit tests
+- `npm run verify`: lint, typecheck, migration validation, unit tests, then production build
 - `npm run types:supabase`: regenerate typed Supabase schema bindings
 
 ## Repo Pointers
@@ -53,6 +58,13 @@ Useful scripts:
 - Meta integration and sync flow: [src/lib/server/integrations/README.md](https://github.com/Yengner/DeepVisor/blob/main/src/lib/server/integrations/README.md)
 - Sync orchestration: [src/lib/server/sync]()
 - Assessments and account intelligence: [src/lib/server/intelligence]()
+- Production architecture overview: [docs/architecture/architecture-overview.md](docs/architecture/architecture-overview.md)
+- API architecture notes: [docs/architecture/api-architecture.md](docs/architecture/api-architecture.md)
+- Security architecture notes: [docs/architecture/security-architecture.md](docs/architecture/security-architecture.md)
+- Infra and DevOps notes: [docs/architecture/infra-devops.md](docs/architecture/infra-devops.md)
+- Observability notes: [docs/architecture/observability.md](docs/architecture/observability.md)
+- Risk register: [docs/architecture/risks-and-decisions.md](docs/architecture/risks-and-decisions.md)
+- Testing strategy: [docs/architecture/testing-strategy.md](docs/architecture/testing-strategy.md)
 
 ## Product Direction
 

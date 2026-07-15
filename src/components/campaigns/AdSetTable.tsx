@@ -24,6 +24,8 @@ const BORDER = 'var(--mantine-color-gray-3)';
 const Z_HEADER = 2;
 const Z_STICKY_RIGHT = 4;
 const RIGHT_COL_WIDTH = 24;
+const SELECTED_ROW_BG = 'var(--platform-accent-soft)';
+const ACTION_COLOR = 'orange';
 
 interface AdSetTableProps {
   adSets?: AdSetLifetimeRow[];
@@ -48,7 +50,12 @@ export default function AdSetTable({
   platformColor = 'dark',
   fillHeight = false,
 }: AdSetTableProps) {
-  const fmt$ = (n?: number) => `$${Number(n || 0).toFixed(2)}`;
+  const fmt$ = (n?: number) =>
+    new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 0,
+    }).format(Number(n || 0));
 
   const maxRowsBeforeScroll = 12;
   const headerH = 44;
@@ -133,7 +140,7 @@ export default function AdSetTable({
                     <Menu.Target>
                       <ActionIcon
                         variant="light"
-                        color={platformColor}
+                        color={ACTION_COLOR}
                         onClick={(event) => event.stopPropagation()}
                       >
                         <IconDots size={16} />
@@ -161,7 +168,7 @@ export default function AdSetTable({
                   </div>
                   <div>
                     <Text size="10px" c="dimmed" tt="uppercase" fw={800}>Cost/Result</Text>
-                    <Text fw={800}>{results > 0 ? fmt$(spend / results) : '$0.00'}</Text>
+                    <Text fw={800}>{results > 0 ? fmt$(spend / results) : fmt$(0)}</Text>
                   </div>
                   <div>
                     <Text size="10px" c="dimmed" tt="uppercase" fw={800}>CTR</Text>
@@ -247,8 +254,8 @@ export default function AdSetTable({
           ) : (
             adSets.map((adSet) => {
               const isSelected = selectedAdSetId === adSet.id;
-              const rowBg = isSelected ? `var(--mantine-color-${platformColor}-1)` : 'transparent';
-              const stickyCellBg = isSelected ? `var(--mantine-color-${platformColor}-1)` : BG;
+              const rowBg = isSelected ? SELECTED_ROW_BG : 'transparent';
+              const stickyCellBg = isSelected ? SELECTED_ROW_BG : BG;
               const status = (adSet.status || '').toString();
               const delivery = status.toUpperCase() === 'ACTIVE';
               const spend = Number(adSet.spend || 0);
@@ -289,7 +296,7 @@ export default function AdSetTable({
                       <ActionIcon
                         aria-label={isSelected ? 'Selected ad set' : 'Select ad set'}
                         variant={isSelected ? 'filled' : 'default'}
-                        color={isSelected ? platformColor : 'gray'}
+                        color={isSelected ? ACTION_COLOR : 'gray'}
                         radius="xl"
                         size="sm"
                         disabled={!onSelectAdSet}
@@ -352,7 +359,7 @@ export default function AdSetTable({
                   </Table.Td>
                   <Table.Td><Text fw={500} size="sm">{fmt$(spend)}</Text></Table.Td>
                   <Table.Td><Text size="sm">{results > 0 ? `${results} Results` : '0 Results'}</Text></Table.Td>
-                  <Table.Td><Text size="sm">{results > 0 ? fmt$(spend / results) : '$0.00'}</Text></Table.Td>
+                  <Table.Td><Text size="sm">{results > 0 ? fmt$(spend / results) : fmt$(0)}</Text></Table.Td>
                   <Table.Td><Text size="sm">{ctr != null ? `${ctr}%` : '0%'}</Text></Table.Td>
                   <Table.Td><Text size="sm">{cpc != null ? fmt$(cpc) : '—'}</Text></Table.Td>
                   <Table.Td><Text size="sm">{cpm != null ? fmt$(cpm) : '—'}</Text></Table.Td>
@@ -363,7 +370,7 @@ export default function AdSetTable({
                   <Table.Td><Text size="sm">{leads}</Text></Table.Td>
                   <Table.Td><Text size="sm">{messages}</Text></Table.Td>
                   <Table.Td><Text size="sm">{reach > 0 ? (impressions / reach).toFixed(2) : '0.00'}</Text></Table.Td>
-                  <Table.Td><Text size="sm">{leads > 0 ? fmt$(spend / leads) : '$0.00'}</Text></Table.Td>
+                  <Table.Td><Text size="sm">{leads > 0 ? fmt$(spend / leads) : fmt$(0)}</Text></Table.Td>
 
                   <Table.Td
                     style={{
@@ -380,7 +387,7 @@ export default function AdSetTable({
                   >
                     <Menu position="bottom-end" withArrow offset={4}>
                       <Menu.Target>
-                        <ActionIcon variant="filled" color={platformColor}>
+                        <ActionIcon variant="filled" color={ACTION_COLOR}>
                           <IconDots size={16} />
                         </ActionIcon>
                       </Menu.Target>

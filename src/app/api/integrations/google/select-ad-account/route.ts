@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { getRequiredAppContext } from '@/lib/server/actions/app/context';
+import { logAuditEvent } from '@/lib/server/audit/logAuditEvent';
 import {
   getBusinessIntegrationById,
   setPrimaryGoogleAdAccount,
 } from '@/lib/server/integrations/service';
+import { consumeRateLimit, rateLimitResponse } from '@/lib/server/security/rateLimit';
 import { createAdminClient } from '@/lib/server/supabase/admin';
 import { applyAppSelectionCookies } from '@/lib/server/integrations/metaSelection';
 import {
@@ -30,18 +33,33 @@ function getSelectionUserMessage(message: string): string {
   return message;
 }
 
+const selectGoogleAdAccountSchema = z.object({
+  integrationId: z.string().trim().min(1).max(128),
+  externalAccountId: z
+    .string()
+    .trim()
+    .min(1)
+    .max(32)
+    .regex(/^[\d-]+$/),
+});
+
 export async function POST(request: NextRequest) {
   try {
-    const { businessId } = await getRequiredAppContext();
-    const body = await request.json().catch(() => ({}));
-    const integrationId =
-      typeof body.integrationId === 'string' ? body.integrationId : null;
-    const externalAccountId =
-      typeof body.externalAccountId === 'string'
-        ? body.externalAccountId.replaceAll('-', '')
-        : null;
+    const { businessId, organizationId, user } = await getRequiredAppContext();
+    const limiter = await consumeRateLimit({
+      identifier: `user:${user.id}:business:${businessId}`,
+      action: 'integration.google.select_ad_account',
+      limit: 20,
+      windowSeconds: 60 * 60,
+    });
 
-    if (!integrationId || !externalAccountId) {
+    if (!limiter.allowed) {
+      return rateLimitResponse(limiter);
+    }
+
+    const parsed = selectGoogleAdAccountSchema.safeParse(await request.json().catch(() => null));
+
+    if (!parsed.success) {
       return NextResponse.json(
         fail('Missing account selection payload', ErrorCode.VALIDATION_ERROR, {
           userMessage: 'Choose one Google Ads account to continue.',
@@ -50,6 +68,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const integrationId = parsed.data.integrationId;
+    const externalAccountId = parsed.data.externalAccountId.replaceAll('-', '');
     const supabase = createAdminClient();
     const integration = await getBusinessIntegrationById(supabase, {
       businessId,
@@ -122,6 +142,22 @@ export async function POST(request: NextRequest) {
       : null;
     const firstSyncJob = latestJob ? buildFirstSyncJobStatus(latestJob, syncCoverage) : null;
 
+    await logAuditEvent(supabase, {
+      businessId,
+      organizationId,
+      actorUserId: user.id,
+      eventType: 'integration.google_ad_account_selected',
+      resourceType: 'ad_account',
+      resourceId: savedAccount.id,
+      platformIntegrationId: integrationId,
+      metadata: {
+        externalAccountId: savedAccount.external_account_id,
+        firstSyncJobStatus: firstSyncJob?.status ?? null,
+      },
+      ipAddress: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      userAgent: request.headers.get('user-agent'),
+    });
+
     const response = NextResponse.json(
       ok({
         integrationId,
@@ -132,6 +168,7 @@ export async function POST(request: NextRequest) {
       })
     );
     applyAppSelectionCookies(response, {
+      businessId,
       platformIntegrationId: integrationId,
       adAccountId: savedAccount.id,
     });

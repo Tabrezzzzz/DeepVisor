@@ -1,368 +1,245 @@
+import Link from 'next/link';
+import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import {
-  Alert,
-  Badge,
-  Button,
-  Card,
-  Container,
-  Divider,
-  Group,
-  Paper,
-  SimpleGrid,
-  Stack,
-  Text,
-  ThemeIcon,
-  Title,
-} from '@mantine/core';
+  Bell,
+  CheckCircle2,
+  Clock3,
+  Edit3,
+  ShieldAlert,
+  Trash2,
+  XCircle,
+} from 'lucide-react';
+import { getRequiredAppContext } from '@/lib/server/actions/app/context';
+import { resolveCurrentSelection } from '@/lib/server/actions/app/selection';
+import { getUserNotifications } from '@/lib/server/actions/user/settings';
+import { createAdminClient } from '@/lib/server/supabase/admin';
+import { getMetaAccountIntelligenceReadModel } from '@/lib/server/intelligence';
 import {
-  IconArrowRight,
-  IconBell,
-  IconBolt,
-  IconCalendarTime,
-  IconChartBar,
-  IconInbox,
-  IconInfoCircle,
-  IconPlug,
-} from '@tabler/icons-react';
+  acceptCalendarQueueWorkflow,
+  deleteCalendarQueueItem,
+} from '@/lib/server/intelligence/repositories/calendarQueue';
 import {
-  formatDisplayDate,
   formatNotificationPreviewMessage,
   formatRelativeTime,
+  type CalendarQueuePreviewItem,
   type NotificationFeedItem,
 } from '@/lib/shared';
-import { getRequiredAppContext } from '@/lib/server/actions/app/context';
-import { getUserNotifications } from '@/lib/server/actions/user/settings';
-import classes from './NotificationsPage.module.css';
 
-function formatDateTime(value: string | null): string {
-  if (!value) {
-    return 'Not available';
-  }
+const fallbackApprovals: ApprovalCard[] = [
+  {
+    id: 'demo-budget-shift',
+    title: 'Shift budget from broad targeting to high-intent search',
+    reason: 'Search and retargeting signals are outperforming broad awareness traffic.',
+    impact: 'Projected spend efficiency improvement before the next review cycle.',
+    risk: 'Medium',
+    source: 'Demo recommendation',
+    status: 'ready',
+    href: '/calendar',
+    queueItemId: null,
+  },
+  {
+    id: 'demo-creative-refresh',
+    title: 'Refresh fatigued creative',
+    reason: 'Frequency and engagement patterns suggest warm audiences need new variants.',
+    impact: 'Recover CTR and keep retargeting from wasting impressions.',
+    risk: 'Low',
+    source: 'Demo recommendation',
+    status: 'ready',
+    href: '/calendar',
+    queueItemId: null,
+  },
+];
 
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return date.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
-function formatTypeLabel(value: string): string {
-  return value
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
-function typeColor(value: string): string {
-  switch (value) {
-    case 'report':
-      return 'blue';
-    case 'calendar':
-      return 'grape';
-    case 'guardrail':
-      return 'red';
-    case 'sync':
-      return 'teal';
-    case 'insight':
-      return 'violet';
-    case 'workflow':
-      return 'orange';
-    default:
-      return 'gray';
-  }
-}
-
-function SummaryCard(props: {
+type ApprovalCard = {
+  id: string;
   title: string;
-  value: string;
-  detail: string;
-  icon: React.ReactNode;
-  color: string;
-}) {
+  reason: string;
+  impact: string;
+  risk: string;
+  source: string;
+  status: string;
+  href: string;
+  queueItemId: string | null;
+};
+
+function queueStatusLabel(status: CalendarQueuePreviewItem['status']): string {
+  switch (status) {
+    case 'ready':
+      return 'Needs approval';
+    case 'approved':
+      return 'Approved';
+    case 'in_progress':
+      return 'Running';
+    case 'completed':
+      return 'Completed';
+    default:
+      return 'Dismissed';
+  }
+}
+
+function notificationToApproval(notification: NotificationFeedItem): ApprovalCard {
+  return {
+    id: notification.id,
+    title: notification.title,
+    reason: formatNotificationPreviewMessage(notification.message),
+    impact: notification.read ? 'Already reviewed in the notification feed.' : 'Unread item needs operator attention.',
+    risk: notification.type === 'guardrail' ? 'High' : notification.type === 'calendar' ? 'Medium' : 'Low',
+    source: notification.type.replace(/_/g, ' '),
+    status: notification.read ? 'Read' : 'Unread',
+    href: notification.link ?? '/notifications',
+    queueItemId: null,
+  };
+}
+
+function queueToApproval(item: CalendarQueuePreviewItem): ApprovalCard {
+  return {
+    id: item.id,
+    title: item.title,
+    reason: item.description ?? 'DeepVisor queued this action from current account intelligence.',
+    impact: item.workflowKey
+      ? `Workflow: ${item.workflowKey.replace(/_/g, ' ')}`
+      : `Channel: ${item.channel}`,
+    risk: item.source === 'agent' || item.source === 'automatic' ? 'High' : 'Medium',
+    source: item.source === 'agent' ? 'Account signal' : item.source,
+    status: queueStatusLabel(item.status),
+    href: item.destinationHref ?? '/calendar',
+    queueItemId: item.id,
+  };
+}
+
+async function approveQueueItem(formData: FormData) {
+  'use server';
+
+  const queueItemId = String(formData.get('queueItemId') ?? '');
+  if (!queueItemId) {
+    return;
+  }
+
+  const { businessId, user } = await getRequiredAppContext();
+  const adminSupabase = createAdminClient();
+  const { data: queueItem } = await adminSupabase
+    .from('calendar_queue_items')
+    .select('id')
+    .eq('id', queueItemId)
+    .eq('business_id', businessId)
+    .maybeSingle();
+
+  if (queueItem?.id) {
+    await acceptCalendarQueueWorkflow(adminSupabase, {
+      queueItemId,
+      userId: user.id,
+    });
+  }
+
+  revalidatePath('/notifications');
+  revalidatePath('/calendar');
+  redirect('/notifications');
+}
+
+async function dismissQueueItem(formData: FormData) {
+  'use server';
+
+  const queueItemId = String(formData.get('queueItemId') ?? '');
+  if (!queueItemId) {
+    return;
+  }
+
+  const { businessId, user } = await getRequiredAppContext();
+  await deleteCalendarQueueItem(createAdminClient(), {
+    id: queueItemId,
+    businessId,
+    userId: user.id,
+  });
+
+  revalidatePath('/notifications');
+  revalidatePath('/calendar');
+  redirect('/notifications');
+}
+
+export default async function ApprovalsPage() {
+  const { businessId, user } = await getRequiredAppContext();
+  const { selectedAdAccountId } = await resolveCurrentSelection(businessId);
+  const adminSupabase = createAdminClient();
+  const [notifications, intelligence] = await Promise.all([
+    getUserNotifications(user.id, 20),
+    selectedAdAccountId
+      ? getMetaAccountIntelligenceReadModel(adminSupabase, {
+          businessId,
+          adAccountId: selectedAdAccountId,
+          userId: user.id,
+        })
+      : Promise.resolve({ signals: [], queueItems: [] }),
+  ]);
+
+  const queueApprovals = intelligence.queueItems
+    .filter((item) => item.status === 'ready')
+    .slice(0, 8)
+    .map(queueToApproval);
+  const notificationApprovals = notifications
+    .filter((notification) => !notification.read || notification.link)
+    .slice(0, 4)
+    .map(notificationToApproval);
+  const approvals = [...queueApprovals, ...notificationApprovals];
+  const cards = approvals.length > 0 ? approvals : fallbackApprovals;
+
   return (
-    <Card withBorder radius="md" p="lg">
-      <Group justify="space-between" align="flex-start" mb="md">
+    <section className="dv-page">
+      <div className="dv-page-header">
         <div>
-          <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-            {props.title}
-          </Text>
-          <Title order={3} mt={6}>
-            {props.value}
-          </Title>
+          <span className="dv-accent-badge inline-flex rounded-full px-3 py-1 text-xs">Approval queue</span>
+          <h2>Approvals</h2>
+          <p>Review AI-recommended marketing actions, queued reports, and notification-driven follow-up before anything is accepted or dismissed.</p>
         </div>
-        <ThemeIcon variant="light" color={props.color} radius="md" size="lg">
-          {props.icon}
-        </ThemeIcon>
-      </Group>
-      <Text size="sm" c="dimmed">
-        {props.detail}
-      </Text>
-    </Card>
-  );
-}
+        <Link className="dv-solid-action" href="/calendar"><Clock3 size={16} strokeWidth={1.6} /> Open calendar queue</Link>
+      </div>
 
-function NotificationCard({ notification }: { notification: NotificationFeedItem }) {
-  return (
-    <Paper
-      withBorder
-      radius="md"
-      p="md"
-      style={{
-        backgroundColor: notification.read ? undefined : 'var(--mantine-color-blue-0)',
-      }}
-    >
-      <Group
-        justify="space-between"
-        align="flex-start"
-        gap="md"
-        wrap="wrap"
-        className={classes.notificationRow}
-      >
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <Group gap="xs" mb={6} wrap="wrap">
-            {!notification.read ? (
-              <Badge color="blue" variant="light">
-                Unread
-              </Badge>
-            ) : (
-              <Badge color="gray" variant="light">
-                Read
-              </Badge>
-            )}
-            <Badge color={typeColor(notification.type)} variant="outline">
-              {formatTypeLabel(notification.type)}
-            </Badge>
-          </Group>
+      <div className="dv-metric-grid">
+        <article className="dv-card dv-metric-card"><div><p>Queue items</p><strong>{queueApprovals.length}</strong><span>ready or scheduled</span></div><ShieldAlert size={20} strokeWidth={1.6} /></article>
+        <article className="dv-card dv-metric-card"><div><p>Notifications</p><strong>{notifications.length}</strong><span>{notifications.filter((item) => !item.read).length} unread</span></div><Bell size={20} strokeWidth={1.6} /></article>
+        <article className="dv-card dv-metric-card"><div><p>Actions</p><strong>{cards.length}</strong><span>visible decisions</span></div><CheckCircle2 size={20} strokeWidth={1.6} /></article>
+        <article className="dv-card dv-metric-card is-risk"><div><p>Risk controls</p><strong>{cards.filter((card) => card.risk === 'High' || card.risk === 'Critical').length}</strong><span>high priority</span></div><XCircle size={20} strokeWidth={1.6} /></article>
+      </div>
 
-          <Text fw={700}>{notification.title}</Text>
-          <Text
-            size="sm"
-            c="dimmed"
-            mt={4}
-            lineClamp={2}
-            title={notification.message}
-          >
-            {formatNotificationPreviewMessage(notification.message)}
-          </Text>
-
-          <Group gap="xs" mt="md" wrap="wrap">
-            <Text size="xs" c="dimmed">
-              {formatDateTime(notification.created_at)}
-            </Text>
-            <Text size="xs" c="dimmed">
-              -
-            </Text>
-            <Text size="xs" c="dimmed">
-              {formatRelativeTime(notification.created_at, {
-                emptyLabel: 'Recently',
-                futureLabel: 'Just now',
-                includeSeconds: true,
-              })}
-            </Text>
-          </Group>
-        </div>
-
-        {notification.link ? (
-          <Button
-            component="a"
-            href={notification.link}
-            variant="light"
-            size="xs"
-            className={classes.notificationAction}
-            rightSection={<IconArrowRight size={14} />}
-          >
-            Open
-          </Button>
-        ) : null}
-      </Group>
-    </Paper>
-  );
-}
-
-export default async function NotificationsPage() {
-  const { user } = await getRequiredAppContext();
-  const notifications = await getUserNotifications(user.id, 50);
-  const unreadCount = notifications.filter((notification) => !notification.read).length;
-  const actionableCount = notifications.filter((notification) => Boolean(notification.link)).length;
-  const typeCount = new Set(notifications.map((notification) => notification.type)).size;
-  const newestDate = notifications[0]?.created_at ?? null;
-
-  return (
-    <Container size="xl" py="md" className={classes.page}>
-      <Stack gap="xl">
-        <Group justify="space-between" align="flex-start" gap="lg" wrap="wrap">
-          <div>
-            <Badge variant="light" color="blue" mb="sm">
-              Live inbox
-            </Badge>
-            <Title order={1}>Notifications</Title>
-            <Text c="dimmed" size="lg" mt={8} maw={760}>
-              This feed now reflects real DeepVisor notices for the current workspace, including
-              trend findings, report-ready prompts, and workflow follow-up items.
-            </Text>
-          </div>
-
-          <Group gap="sm" className={classes.headerActions}>
-            <Button component="a" href="/dashboard" variant="default">
-              Dashboard
-            </Button>
-            <Button component="a" href="/integration" rightSection={<IconArrowRight size={16} />}>
-              Open integrations
-            </Button>
-          </Group>
-        </Group>
-
-        <SimpleGrid cols={{ base: 1, md: 2, xl: 4 }} spacing="md">
-          <SummaryCard
-            title="Feed Size"
-            value={`${notifications.length}`}
-            detail="Notifications currently available in the workspace feed."
-            icon={<IconInbox size={18} />}
-            color="blue"
-          />
-          <SummaryCard
-            title="Unread"
-            value={`${unreadCount}`}
-            detail="Messages that would still need attention in a live inbox."
-            icon={<IconBell size={18} />}
-            color="grape"
-          />
-          <SummaryCard
-            title="Actionable"
-            value={`${actionableCount}`}
-            detail="Notifications with a direct destination inside the app."
-            icon={<IconBolt size={18} />}
-            color="orange"
-          />
-          <SummaryCard
-            title="Latest Update"
-            value={newestDate ? formatDisplayDate(newestDate) : 'N/A'}
-            detail={
-              newestDate
-                ? formatRelativeTime(newestDate, {
-                    emptyLabel: 'Recently',
-                    futureLabel: 'Just now',
-                    includeSeconds: true,
-                  })
-                : 'No notifications yet.'
-            }
-            icon={<IconCalendarTime size={18} />}
-            color="teal"
-          />
-        </SimpleGrid>
-
-        <SimpleGrid cols={{ base: 1, xl: 3 }} spacing="md" verticalSpacing="md">
-          <Card withBorder radius="lg" p="xl" className={classes.feedCard}>
-            <Group justify="space-between" align="flex-start" mb="lg" wrap="wrap">
+      <div className="dv-report-grid">
+        {cards.map((approval) => (
+          <article key={approval.id} className="dv-card dv-section-card">
+            <div className="dv-section-heading">
               <div>
-                <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                  Full Feed
-                </Text>
-                <Title order={3}>All notifications</Title>
-                <Text size="sm" c="dimmed" mt={4}>
-                  Ordered newest first, with direct links back to the parts of the product each notice points to.
-                </Text>
+                <p>{approval.source}</p>
+                <h3>{approval.title}</h3>
               </div>
-              <Badge color={unreadCount > 0 ? 'blue' : 'gray'} variant="light">
-                {unreadCount} unread
-              </Badge>
-            </Group>
-
-            <Stack gap="md">
-              {notifications.map((notification) => (
-                <NotificationCard key={notification.id} notification={notification} />
-              ))}
-            </Stack>
-          </Card>
-
-          <Stack gap="md">
-            <Card withBorder radius="lg" p="xl">
-              <Group gap="sm" mb="md">
-                <ThemeIcon variant="light" color="violet" radius="md">
-                  <IconChartBar size={16} />
-                </ThemeIcon>
-                <div>
-                  <Text fw={700}>What will show up here</Text>
-                  <Text size="sm" c="dimmed">
-                    The intended notification categories for DeepVisor
-                  </Text>
-                </div>
-              </Group>
-
-              <Stack gap="sm">
-                <Paper withBorder radius="md" p="sm">
-                  <Text fw={700} size="sm">Reports and briefs</Text>
-                  <Text size="sm" c="dimmed" mt={4}>
-                    New summaries, wins, weak spots, and recommendation refreshes.
-                  </Text>
-                </Paper>
-                <Paper withBorder radius="md" p="sm">
-                  <Text fw={700} size="sm">Calendar and workflow prompts</Text>
-                  <Text size="sm" c="dimmed" mt={4}>
-                    Approval requests, queued work, and next-step reminders.
-                  </Text>
-                </Paper>
-                <Paper withBorder radius="md" p="sm">
-                  <Text fw={700} size="sm">Sync and integration status</Text>
-                  <Text size="sm" c="dimmed" mt={4}>
-                    Platform sync completions, token issues, and reconnect prompts.
-                  </Text>
-                </Paper>
-                <Paper withBorder radius="md" p="sm">
-                  <Text fw={700} size="sm">Guardrails and signals</Text>
-                  <Text size="sm" c="dimmed" mt={4}>
-                    Spend shifts, delivery concerns, and other notable account changes.
-                  </Text>
-                </Paper>
-              </Stack>
-            </Card>
-
-            <Card withBorder radius="lg" p="xl">
-              <Group gap="sm" mb="md">
-                <ThemeIcon variant="light" color="teal" radius="md">
-                  <IconPlug size={16} />
-                </ThemeIcon>
-                <div>
-                  <Text fw={700}>How to use this feed</Text>
-                  <Text size="sm" c="dimmed">
-                    What these notices are meant to drive
-                  </Text>
-                </div>
-              </Group>
-
-              <Stack gap="sm">
-                <Text size="sm" c="dimmed">
-                  Use this page to review the current attention layer without leaving the workspace context:
-                </Text>
-                <Divider />
-                <Text size="sm">1. Trend findings and report-ready prompts land here first.</Text>
-                <Text size="sm">2. Calendar approvals and follow-up links stay directly actionable.</Text>
-                <Text size="sm">3. Notification and report preferences can be managed from Settings.</Text>
-                <Button component="a" href="/settings" variant="light" mt="sm">
-                  Review settings
-                </Button>
-              </Stack>
-            </Card>
-
-            <Card withBorder radius="lg" p="xl">
-              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                Categories
-              </Text>
-              <Title order={3} mt={6}>
-                {typeCount} feed types
-              </Title>
-              <Text size="sm" c="dimmed" mt="xs">
-                The static feed currently covers reporting, calendar, guardrails, sync, insights, system, and workflow messages.
-              </Text>
-            </Card>
-          </Stack>
-        </SimpleGrid>
-      </Stack>
-    </Container>
+              <ShieldAlert size={20} strokeWidth={1.6} />
+            </div>
+            <dl className="dv-insight-list">
+              <div><dt>Reason</dt><dd>{approval.reason}</dd></div>
+              <div><dt>Expected impact</dt><dd>{approval.impact}</dd></div>
+              <div><dt>Risk level</dt><dd>{approval.risk}</dd></div>
+            </dl>
+            <div className="dv-insight-footer">
+              <span>{approval.status}</span>
+              <span>{approval.queueItemId ? 'Calendar queue' : 'Notification'}</span>
+            </div>
+            <div className="dv-card-actions">
+              {approval.queueItemId ? (
+                <form action={approveQueueItem}>
+                  <input type="hidden" name="queueItemId" value={approval.queueItemId} />
+                  <button type="submit"><CheckCircle2 size={15} strokeWidth={1.6} /> Approve</button>
+                </form>
+              ) : (
+                <Link href={approval.href}><CheckCircle2 size={15} strokeWidth={1.6} /> Open</Link>
+              )}
+              <Link href={approval.href}><Edit3 size={15} strokeWidth={1.6} /> Review</Link>
+              {approval.queueItemId ? (
+                <form action={dismissQueueItem}>
+                  <input type="hidden" name="queueItemId" value={approval.queueItemId} />
+                  <button type="submit"><Trash2 size={15} strokeWidth={1.6} /> Dismiss</button>
+                </form>
+              ) : null}
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }

@@ -1,10 +1,14 @@
 "use server";
 
+import { revalidatePath } from 'next/cache';
 import { createServerClient } from '@/lib/server/supabase/server';
 import { ok, fail, type ApiResponse, ErrorCode } from '@/lib/shared';
 import { getErrorMessage } from '@/lib/shared/utils/guards';
 import { requireUserId } from '@/lib/server/actions/user/session';
-import { getOrCreateOrganizationBusinessContext } from '@/lib/server/actions/business/context';
+import {
+  getOrCreateOrganizationBusinessContext,
+  invalidateOrganizationBusinessContext,
+} from '@/lib/server/actions/business/context';
 import type { Database } from '@/lib/shared/types/supabase';
 import {
   AVERAGE_CUSTOMER_VALUE_OPTIONS,
@@ -15,8 +19,10 @@ import {
   INTELLIGENCE_GOAL_OPTIONS,
   LEAD_QUALITY_SIGNAL_OPTIONS,
   LEAD_TYPE_OPTIONS,
+  MARKETING_GOAL_OPTIONS,
   META_ADS_STATUS_OPTIONS,
   MONTHLY_AD_BUDGET_OPTIONS,
+  PLATFORM_OPTIONS,
   RECOMMENDATION_STYLE_OPTIONS,
   SAFETY_PREFERENCE_OPTIONS,
   SALON_INDUSTRY_OPTIONS,
@@ -283,8 +289,8 @@ export async function getOnboardingInitial(): Promise<ApiResponse<OnboardingInit
       watchSignals: allowedArrayOrEmpty(bp.watch_signals, WATCH_SIGNAL_OPTIONS),
       recommendationStyle: allowedOrNull(bp.recommendation_style, RECOMMENDATION_STYLE_OPTIONS),
       safetyPreference: allowedOrNull(bp.safety_preference, SAFETY_PREFERENCE_OPTIONS),
-      adGoals: Array.isArray(bp.ad_goals) ? bp.ad_goals : [],
-      preferredPlatforms: Array.isArray(bp.preferred_platforms) ? bp.preferred_platforms : [],
+      adGoals: allowedArrayOrEmpty(bp.ad_goals, MARKETING_GOAL_OPTIONS),
+      preferredPlatforms: allowedArrayOrEmpty(bp.preferred_platforms, PLATFORM_OPTIONS),
     },
   });
 }
@@ -319,7 +325,7 @@ export async function updateBusinessProfileData(input: {
     const contextRes = await requireActiveBusinessContextOrFail();
     if (!contextRes.success) return contextRes;
 
-    const { businessId, organizationId, organizationType } = contextRes.data;
+    const { userId, businessId, organizationId, organizationType } = contextRes.data;
     const businessName = input.businessName === undefined
       ? undefined
       : normalizeBusinessName(input.businessName);
@@ -339,11 +345,11 @@ export async function updateBusinessProfileData(input: {
     }
 
     const validationError =
-      validateAllowedString('Industry', input.industry, SALON_INDUSTRY_OPTIONS, input.industry !== undefined) ??
+      validateAllowedString('Business type', input.industry, SALON_INDUSTRY_OPTIONS, input.industry !== undefined) ??
       validateAllowedString('Monthly ad budget', input.monthlyBudget, MONTHLY_AD_BUDGET_OPTIONS, input.monthlyBudget !== undefined) ??
       validateAllowedString('Customer radius', input.customerRadius, CUSTOMER_RADIUS_OPTIONS) ??
-      validateAllowedArray('Main services', input.promotedServices, SALON_SERVICE_OPTIONS, input.promotedServices !== undefined) ??
-      validateAllowedString('Most valuable service', input.mostValuableService, [
+      validateAllowedArray('Main goals', input.promotedServices, SALON_SERVICE_OPTIONS, input.promotedServices !== undefined) ??
+      validateAllowedString('Primary goal', input.mostValuableService, [
         ...SALON_SERVICE_OPTIONS,
         ...SALON_MOST_VALUABLE_SERVICE_OPTIONS,
       ], input.mostValuableService !== undefined) ??
@@ -355,6 +361,8 @@ export async function updateBusinessProfileData(input: {
       validateAllowedString('Average customer value', input.averageCustomerValue, AVERAGE_CUSTOMER_VALUE_OPTIONS) ??
       validateAllowedString('Target cost per lead', input.targetCostPerLead, TARGET_COST_PER_LEAD_OPTIONS) ??
       validateAllowedArray('Watch signals', input.watchSignals, WATCH_SIGNAL_OPTIONS, input.watchSignals !== undefined) ??
+      validateAllowedArray('Main goals', input.adGoals, MARKETING_GOAL_OPTIONS, input.adGoals !== undefined) ??
+      validateAllowedArray('Preferred platforms', input.preferredPlatforms, PLATFORM_OPTIONS, input.preferredPlatforms !== undefined) ??
       validateAllowedString('Recommendation style', input.recommendationStyle, RECOMMENDATION_STYLE_OPTIONS, input.recommendationStyle !== undefined) ??
       validateAllowedString('Safety preference', input.safetyPreference, SAFETY_PREFERENCE_OPTIONS, input.safetyPreference !== undefined);
 
@@ -425,6 +433,10 @@ export async function updateBusinessProfileData(input: {
       }
     }
 
+    await invalidateOrganizationBusinessContext(userId);
+    revalidatePath('/dashboard');
+    revalidatePath('/onboarding');
+
     return ok(null);
   } catch (error) {
     return fail(getErrorMessage(error), ErrorCode.UNKNOWN_ERROR);
@@ -441,11 +453,12 @@ export async function updateOnboardingProgress(input: {
     const contextRes = await requireActiveBusinessContextOrFail();
     if (!contextRes.success) return contextRes;
 
-    const { businessId } = contextRes.data;
+    const { userId, businessId } = contextRes.data;
+    const completed = input.completed === undefined ? undefined : Boolean(input.completed);
 
     const updateData = cleanUndefined({
-      onboarding_step: input.step,
-      onboarding_completed: input.completed,
+      onboarding_step: Math.max(0, Math.floor(input.step)),
+      onboarding_completed: completed,
       updated_at: new Date().toISOString(),
     });
 
@@ -457,6 +470,10 @@ export async function updateOnboardingProgress(input: {
     if (error) {
       return fail(getErrorMessage(error), ErrorCode.DATABASE_ERROR);
     }
+
+    await invalidateOrganizationBusinessContext(userId);
+    revalidatePath('/dashboard');
+    revalidatePath('/onboarding');
 
     return ok(null);
   } catch (error) {

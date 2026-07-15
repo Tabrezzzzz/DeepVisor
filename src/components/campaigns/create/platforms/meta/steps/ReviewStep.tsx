@@ -198,7 +198,7 @@ export default function ReviewStep({ form, setActive }: ReviewStepProps) {
                                 <Stack gap={0}>
                                     <Title order={4}>Campaign Review</Title>
                                     <Text size="sm" c="dimmed">
-                                        Review your campaign settings before launching
+                                        Review your campaign settings before saving the draft
                                     </Text>
                                 </Stack>
                                 <ThemeIcon size={42} radius="md" color="blue" variant="light">
@@ -502,7 +502,7 @@ export default function ReviewStep({ form, setActive }: ReviewStepProps) {
                                         onClick={handleSubmit}
                                         loading={isSubmitting}
                                     >
-                                        {isSubmitting ? 'Launching Campaign...' : 'Launch Campaign'}
+                                        {isSubmitting ? 'Saving Draft...' : 'Save Campaign Draft'}
                                     </Button>
 
                                     <Button
@@ -514,13 +514,13 @@ export default function ReviewStep({ form, setActive }: ReviewStepProps) {
                                     </Button>
 
                                     {submitSuccess && (
-                                        <Alert color="green" icon={<IconCheck size={16} />} title="Campaign Created Successfully">
-                                            Your campaign has been submitted to Meta for review.
+                                        <Alert color="green" icon={<IconCheck size={16} />} title="Campaign Draft Saved">
+                                            Your campaign draft is saved for review. Live Meta publishing is disabled until mutation approval is implemented.
                                         </Alert>
                                     )}
 
                                     {submitError && (
-                                        <Alert color="red" icon={<IconX size={16} />} title="Error Creating Campaign">
+                                        <Alert color="red" icon={<IconX size={16} />} title="Error Saving Draft">
                                             {submitError}
                                         </Alert>
                                     )}

@@ -289,6 +289,20 @@ async function readSecret(supabase: AppSupabaseClient, secretId: string | null):
   return typeof data === 'string' && data.length > 0 ? data : null;
 }
 
+async function deleteSecret(supabase: AppSupabaseClient, secretId: string | null): Promise<void> {
+  if (!secretId) {
+    return;
+  }
+
+  const { error } = await (supabase as any).rpc('delete_platform_token', {
+    secret_id: secretId,
+  });
+
+  if (error) {
+    throw error;
+  }
+}
+
 export async function getGoogleAdsWorkspaceCredentialStatus(
   supabase: AppSupabaseClient,
   businessId: string
@@ -639,6 +653,8 @@ export async function softDisconnectIntegration(
   if (fetchError) throw fetchError;
   if (!integration) throw new Error('Integration not found');
   const integrationRow = integration as unknown as PlatformIntegrationStorageRow;
+  const accessTokenSecretId = integrationRow.access_token_secret_id;
+  const refreshTokenSecretId = integrationRow.refresh_token_secret_id;
 
   const disconnectedDetails = mergeDetails(stripTokens(integrationRow.integration_details), {
     status: 'disconnected',
@@ -662,6 +678,9 @@ export async function softDisconnectIntegration(
     .eq('business_id', input.businessId);
 
   if (updateError) throw updateError;
+
+  await deleteSecret(supabase, accessTokenSecretId);
+  await deleteSecret(supabase, refreshTokenSecretId);
 }
 
 export type BusinessIntegration = {

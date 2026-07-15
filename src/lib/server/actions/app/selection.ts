@@ -1,6 +1,11 @@
 import { cache } from 'react';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@/lib/server/supabase/server';
+import {
+  scopedSelectionCookieName,
+  SELECTED_AD_ACCOUNT_COOKIE,
+  SELECTED_PLATFORM_COOKIE,
+} from '@/lib/server/actions/app/workspace-selection';
 import { asRecord } from '@/lib/shared';
 
 export type AppSelection = {
@@ -8,18 +13,26 @@ export type AppSelection = {
   selectedAdAccountId: string | null;
 };
 
-export const getCurrentSelection = cache(async (): Promise<AppSelection> => {
+export const getCurrentSelection = cache(async (businessId: string): Promise<AppSelection> => {
   const cookieStore = await cookies();
+  const scopedPlatformCookie = scopedSelectionCookieName(SELECTED_PLATFORM_COOKIE, businessId);
+  const scopedAdAccountCookie = scopedSelectionCookieName(SELECTED_AD_ACCOUNT_COOKIE, businessId);
 
   return {
-    selectedPlatformId: cookieStore.get('platform_integration_id')?.value ?? null,
-    selectedAdAccountId: cookieStore.get('ad_account_row_id')?.value ?? null,
+    selectedPlatformId:
+      cookieStore.get(scopedPlatformCookie)?.value ??
+      cookieStore.get(SELECTED_PLATFORM_COOKIE)?.value ??
+      null,
+    selectedAdAccountId:
+      cookieStore.get(scopedAdAccountCookie)?.value ??
+      cookieStore.get(SELECTED_AD_ACCOUNT_COOKIE)?.value ??
+      null,
   };
 });
 
 export const resolveCurrentSelection = cache(
   async (businessId: string): Promise<AppSelection> => {
-    const cookieSelection = await getCurrentSelection();
+    const cookieSelection = await getCurrentSelection(businessId);
     const supabase = await createServerClient();
 
     const { data: integrations, error: integrationError } = await supabase

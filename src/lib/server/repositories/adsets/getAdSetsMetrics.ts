@@ -66,6 +66,7 @@ async function listAdsetDims(input: {
   campaignExternalId?: string;
   adsetExternalId?: string;
 }): Promise<AdsetDimRow[]> {
+  const rows: AdsetDimRow[] = [];
   let query = input.supabase
     .from('adset_dims')
     .select('id, external_id, campaign_external_id, name, optimization_goal, status, created_time')
@@ -84,7 +85,48 @@ async function listAdsetDims(input: {
     throw error;
   }
 
-  return (data ?? []) as AdsetDimRow[];
+  rows.push(...((data ?? []) as AdsetDimRow[]));
+
+  let entityQuery = input.supabase
+    .from('ad_entities')
+    .select('id, external_id, parent_external_id, name, optimization_goal, status, created_time')
+    .eq('ad_account_id', input.adAccountId)
+    .eq('entity_level', 'adset');
+
+  if (input.campaignExternalId) {
+    entityQuery = entityQuery.eq('parent_external_id', input.campaignExternalId);
+  }
+
+  if (input.adsetExternalId) {
+    entityQuery = entityQuery.eq('external_id', input.adsetExternalId);
+  }
+
+  const { data: entityData, error: entityError } = await entityQuery;
+  if (entityError) {
+    throw entityError;
+  }
+
+  rows.push(
+    ...((entityData ?? []) as Array<{
+      id: string;
+      external_id: string;
+      parent_external_id: string | null;
+      name: string | null;
+      optimization_goal: string | null;
+      status: string | null;
+      created_time: string | null;
+    }>).map((row) => ({
+      id: row.id,
+      external_id: row.external_id,
+      campaign_external_id: row.parent_external_id ?? '',
+      name: row.name,
+      optimization_goal: row.optimization_goal,
+      status: row.status,
+      created_time: row.created_time,
+    }))
+  );
+
+  return Array.from(new Map(rows.map((row) => [`${row.external_id}`, row])).values());
 }
 
 async function listAdsetPerformanceRows(input: {
@@ -94,18 +136,32 @@ async function listAdsetPerformanceRows(input: {
   const rows: AdsetPerformanceRow[] = [];
 
   for (const adsetIdsChunk of chunkArray(input.adsetIds, 200)) {
-    const { data, error } = await input.supabase
-      .from('adset_performance_summary')
-      .select(
-        'adset_id, spend, reach, impressions, clicks, inline_link_clicks, leads, messages, first_day, last_day'
-      )
-      .in('adset_id', adsetIdsChunk);
+    const [legacyResult, entityResult] = await Promise.all([
+      input.supabase
+        .from('adset_performance_summary')
+        .select(
+          'adset_id, spend, reach, impressions, clicks, inline_link_clicks, leads, messages, first_day, last_day'
+        )
+        .in('adset_id', adsetIdsChunk),
+      input.supabase
+        .from('ad_entity_performance_summary')
+        .select(
+          'adset_id:entity_id, spend, reach, impressions, clicks, inline_link_clicks, leads, messages, first_day, last_day'
+        )
+        .eq('entity_level', 'adset')
+        .in('entity_id', adsetIdsChunk),
+    ]);
 
-    if (error) {
-      throw error;
+    if (legacyResult.error) {
+      throw legacyResult.error;
     }
 
-    rows.push(...((data ?? []) as AdsetPerformanceRow[]));
+    if (entityResult.error) {
+      throw entityResult.error;
+    }
+
+    rows.push(...((legacyResult.data ?? []) as AdsetPerformanceRow[]));
+    rows.push(...((entityResult.data ?? []) as AdsetPerformanceRow[]));
   }
 
   return rows;
@@ -130,6 +186,21 @@ async function listCampaignNames(input: {
     }
 
     for (const campaign of (data ?? []) as CampaignLookupRow[]) {
+      campaignNames.set(campaign.external_id, campaign.name || 'Unnamed campaign');
+    }
+
+    const { data: entityData, error: entityError } = await input.supabase
+      .from('ad_entities')
+      .select('external_id, name')
+      .eq('ad_account_id', input.adAccountId)
+      .eq('entity_level', 'campaign')
+      .in('external_id', externalIdsChunk);
+
+    if (entityError) {
+      throw entityError;
+    }
+
+    for (const campaign of (entityData ?? []) as CampaignLookupRow[]) {
       campaignNames.set(campaign.external_id, campaign.name || 'Unnamed campaign');
     }
   }

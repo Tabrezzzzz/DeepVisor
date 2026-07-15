@@ -13,6 +13,15 @@ type SummaryRow = {
   leads: number;
   messages: number;
   calls: number;
+  conversions: number;
+  all_conversions: number;
+  conversion_value: number;
+  all_conversion_value: number;
+  cpa: number | null;
+  roas: number | null;
+  search_impression_share: number | null;
+  search_budget_lost_impression_share: number | null;
+  search_rank_lost_impression_share: number | null;
   ctr: number | null;
   cpc: number | null;
   cpm: number | null;
@@ -41,6 +50,13 @@ type DailyRow = {
   leads: number | string | null;
   messages: number | string | null;
   calls: number | string | null;
+  conversions?: number | string | null;
+  all_conversions?: number | string | null;
+  conversion_value?: number | string | null;
+  all_conversion_value?: number | string | null;
+  search_impression_share?: number | string | null;
+  search_budget_lost_impression_share?: number | string | null;
+  search_rank_lost_impression_share?: number | string | null;
 };
 
 type MonthlyRow = {
@@ -56,6 +72,13 @@ type MonthlyRow = {
   leads: number | string | null;
   messages: number | string | null;
   calls: number | string | null;
+  conversions?: number | string | null;
+  all_conversions?: number | string | null;
+  conversion_value?: number | string | null;
+  all_conversion_value?: number | string | null;
+  search_impression_share?: number | string | null;
+  search_budget_lost_impression_share?: number | string | null;
+  search_rank_lost_impression_share?: number | string | null;
 };
 
 type ExistingSummaryRow = Pick<
@@ -78,6 +101,14 @@ type Totals = {
   leads: number;
   messages: number;
   calls: number;
+  conversions: number;
+  allConversions: number;
+  conversionValue: number;
+  allConversionValue: number;
+  searchImpressionShareWeighted: number;
+  searchBudgetLostImpressionShareWeighted: number;
+  searchRankLostImpressionShareWeighted: number;
+  impressionShareWeight: number;
 };
 
 function toNumber(value: number | string | null | undefined): number {
@@ -103,6 +134,14 @@ function zeroTotals(): Totals {
     leads: 0,
     messages: 0,
     calls: 0,
+    conversions: 0,
+    allConversions: 0,
+    conversionValue: 0,
+    allConversionValue: 0,
+    searchImpressionShareWeighted: 0,
+    searchBudgetLostImpressionShareWeighted: 0,
+    searchRankLostImpressionShareWeighted: 0,
+    impressionShareWeight: 0,
   };
 }
 
@@ -118,16 +157,38 @@ function addMetrics(
     | 'leads'
     | 'messages'
     | 'calls'
+    | 'conversions'
+    | 'all_conversions'
+    | 'conversion_value'
+    | 'all_conversion_value'
+    | 'search_impression_share'
+    | 'search_budget_lost_impression_share'
+    | 'search_rank_lost_impression_share'
   >
 ): void {
+  const impressions = toNumber(row.impressions);
   totals.spend += toNumber(row.spend);
-  totals.impressions += toNumber(row.impressions);
+  totals.impressions += impressions;
   totals.reach += toNumber(row.reach);
   totals.clicks += toNumber(row.clicks);
   totals.inlineLinkClicks += toNumber(row.inline_link_clicks);
   totals.leads += toNumber(row.leads);
   totals.messages += toNumber(row.messages);
   totals.calls += toNumber(row.calls);
+  totals.conversions += toNumber(row.conversions);
+  totals.allConversions += toNumber(row.all_conversions);
+  totals.conversionValue += toNumber(row.conversion_value);
+  totals.allConversionValue += toNumber(row.all_conversion_value);
+
+  if (impressions > 0) {
+    const searchImpressionShare = toNumber(row.search_impression_share);
+    const budgetLost = toNumber(row.search_budget_lost_impression_share);
+    const rankLost = toNumber(row.search_rank_lost_impression_share);
+    if (searchImpressionShare > 0) totals.searchImpressionShareWeighted += searchImpressionShare * impressions;
+    if (budgetLost > 0) totals.searchBudgetLostImpressionShareWeighted += budgetLost * impressions;
+    if (rankLost > 0) totals.searchRankLostImpressionShareWeighted += rankLost * impressions;
+    if (searchImpressionShare > 0 || budgetLost > 0 || rankLost > 0) totals.impressionShareWeight += impressions;
+  }
 }
 
 function minDate(left: string | null, right: string | null): string | null {
@@ -188,13 +249,13 @@ export async function refreshAdEntityPerformanceSummaries(
       client
         .from('ad_entity_performance_daily')
         .select(
-          'entity_id, ad_account_id, entity_level, day, spend, impressions, reach, clicks, inline_link_clicks, leads, messages, calls'
+          'entity_id, ad_account_id, entity_level, day, spend, impressions, reach, clicks, inline_link_clicks, leads, messages, calls, conversions, all_conversions, conversion_value, all_conversion_value, search_impression_share, search_budget_lost_impression_share, search_rank_lost_impression_share'
         )
         .in('entity_id', idsChunk),
       client
         .from('ad_entity_performance_monthly')
         .select(
-          'entity_id, ad_account_id, entity_level, month_start, spend, impressions, reach, clicks, inline_link_clicks, leads, messages, calls'
+          'entity_id, ad_account_id, entity_level, month_start, spend, impressions, reach, clicks, inline_link_clicks, leads, messages, calls, conversions, all_conversions, conversion_value, all_conversion_value, search_impression_share, search_budget_lost_impression_share, search_rank_lost_impression_share'
         )
         .in('entity_id', idsChunk),
       client
@@ -306,6 +367,18 @@ export async function refreshAdEntityPerformanceSummaries(
       leads: totals.leads,
       messages: totals.messages,
       calls: totals.calls,
+      conversions: totals.conversions || totals.leads,
+      all_conversions: totals.allConversions || totals.conversions || totals.leads,
+      conversion_value: totals.conversionValue,
+      all_conversion_value: totals.allConversionValue || totals.conversionValue,
+      cpa: (totals.conversions || totals.leads) > 0 ? totals.spend / (totals.conversions || totals.leads) : null,
+      roas: totals.spend > 0 ? (totals.conversionValue || totals.allConversionValue) / totals.spend : null,
+      search_impression_share:
+        totals.impressionShareWeight > 0 ? totals.searchImpressionShareWeighted / totals.impressionShareWeight : null,
+      search_budget_lost_impression_share:
+        totals.impressionShareWeight > 0 ? totals.searchBudgetLostImpressionShareWeighted / totals.impressionShareWeight : null,
+      search_rank_lost_impression_share:
+        totals.impressionShareWeight > 0 ? totals.searchRankLostImpressionShareWeighted / totals.impressionShareWeight : null,
       ctr: totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : null,
       cpc: totals.clicks > 0 ? totals.spend / totals.clicks : null,
       cpm: totals.impressions > 0 ? totals.spend / (totals.impressions / 1000) : null,

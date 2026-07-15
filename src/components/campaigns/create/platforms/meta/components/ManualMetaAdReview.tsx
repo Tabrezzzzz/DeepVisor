@@ -61,7 +61,7 @@ export default function ManualMetaAdReview({
                             <Badge w="fit-content" variant="light" color="violet">
                                 Add Ad
                             </Badge>
-                            <Title order={3}>Review your new ad</Title>
+                            <Title order={3}>Review your new ad draft</Title>
                             <Text c="dimmed">
                                 This ad will be attached to <strong>{adSetName}</strong> inside{' '}
                                 <strong>{campaignName}</strong> so you can reuse the ad set delivery context.
@@ -140,7 +140,7 @@ export default function ManualMetaAdReview({
 
                     {submitSuccess ? (
                         <Alert color="green" radius="lg" title="Submitted">
-                            Your ad request has been sent successfully.
+                            Your ad draft has been saved for review.
                         </Alert>
                     ) : null}
 
@@ -168,7 +168,7 @@ export default function ManualMetaAdReview({
                             loading={isSubmitting}
                             onClick={() => void submitCampaign(values)}
                         >
-                            Create ad
+                            Save ad draft
                         </Button>
                     </Group>
                 </Stack>

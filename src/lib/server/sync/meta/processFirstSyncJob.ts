@@ -26,6 +26,7 @@ import { syncMetaAdCreatives } from './syncMetaAdCreatives';
 import { syncMetaAds } from './syncMetaAds';
 import { syncMetaAdsets } from './syncMetaAdsets';
 import { syncMetaCampaigns } from './syncMetaCampaigns';
+import { syncMetaLeads } from './syncMetaLeads';
 
 type AccountSyncJobRow = Database['public']['Tables']['account_sync_jobs']['Row'];
 type AdAccountRow = Database['public']['Tables']['ad_accounts']['Row'];
@@ -273,6 +274,28 @@ export async function processMetaFirstSyncJob(input: {
     stage: 'syncing_creatives',
     counts: dimensionCounts,
   });
+
+  try {
+    const leadSync = await syncMetaLeads({
+      supabase: input.supabase,
+      businessId: input.job.business_id,
+      platformIntegrationId: input.job.platform_integration_id,
+      adAccount,
+      campaigns: campaigns.rows,
+      adsets: adsets.rows,
+      ads: ads.rows,
+      accessToken: input.accessToken,
+      syncedAt,
+    });
+
+    if (leadSync.errors.length > 0) {
+      console.warn('First Meta lead sync completed with errors:', leadSync);
+    } else {
+      console.info('First Meta lead sync completed:', leadSync);
+    }
+  } catch (error) {
+    console.warn('First Meta lead sync skipped:', error);
+  }
 
   const dataPolicy = await getOrCreateBusinessDataPolicy(input.supabase, input.job.business_id);
   const maxSupportedWindow = resolveMetaBackfillWindow(

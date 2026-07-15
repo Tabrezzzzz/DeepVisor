@@ -4,9 +4,9 @@ import Footer from "./components/Footer";
 
 
 export const metadata: Metadata = {
-  title: "DeepVisor - Easier Paid Ads for Salons",
+  title: "DeepVisor - AI Performance Marketing Command Center",
   description:
-    "DeepVisor makes running salon paid ads easier with Meta ad monitoring, wasted-spend detection, Scheduled Reviews, clear reports, campaign reviews, and simpler next-step approvals.",
+    "DeepVisor helps marketing teams monitor paid ad performance, detect wasted spend, track ROAS, CPL, CAC, lead quality, reports, and approval-ready next actions.",
 };
 
 export default function RootLayout({

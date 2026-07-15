@@ -37,8 +37,15 @@ const BORDER = 'var(--mantine-color-gray-3)';
 const Z_HEADER = 2;
 const Z_STICKY_RIGHT = 4;
 const RIGHT_COL_WIDTH = 24;
+const SELECTED_ROW_BG = 'var(--platform-accent-soft)';
+const ACTION_COLOR = 'orange';
 
-const fmt$ = (n?: number) => `$${Number(n || 0).toFixed(2)}`;
+const fmt$ = (n?: number) =>
+  new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+  }).format(Number(n || 0));
 const fmtPct = (n?: number) => {
   if (n == null) {
     return '0%';
@@ -159,7 +166,7 @@ export default function AdsTable({
                     <Menu.Target>
                       <ActionIcon
                         variant="light"
-                        color={platformColor}
+                        color={ACTION_COLOR}
                         onClick={(event) => event.stopPropagation()}
                       >
                         <IconDots size={16} />
@@ -189,7 +196,7 @@ export default function AdsTable({
                   </div>
                   <div>
                     <Text size="10px" c="dimmed" tt="uppercase" fw={800}>Cost/Result</Text>
-                    <Text fw={800}>{conversions > 0 ? fmt$(spend / conversions) : '$0.00'}</Text>
+                    <Text fw={800}>{conversions > 0 ? fmt$(spend / conversions) : fmt$(0)}</Text>
                   </div>
                   <div>
                     <Text size="10px" c="dimmed" tt="uppercase" fw={800}>CTR</Text>
@@ -282,8 +289,8 @@ export default function AdsTable({
               const raw = asRecord(ad.raw_data);
               const creative = asRecord(raw.creative);
               const isSelected = selectedAdId === id;
-              const rowBg = isSelected ? `var(--mantine-color-${platformColor}-1)` : 'transparent';
-              const stickyCellBg = isSelected ? `var(--mantine-color-${platformColor}-1)` : BG;
+              const rowBg = isSelected ? SELECTED_ROW_BG : 'transparent';
+              const stickyCellBg = isSelected ? SELECTED_ROW_BG : BG;
               const reportHref = buildEntityReportUrl({
                 scope: 'ad',
                 platformIntegrationId,
@@ -317,7 +324,7 @@ export default function AdsTable({
                       <ActionIcon
                         aria-label={isSelected ? 'Selected ad' : 'Select ad'}
                         variant={isSelected ? 'filled' : 'default'}
-                        color={isSelected ? platformColor : 'gray'}
+                        color={isSelected ? ACTION_COLOR : 'gray'}
                         radius="xl"
                         size="sm"
                         disabled={!onSelectAd}
@@ -372,7 +379,7 @@ export default function AdsTable({
                   </Table.Td>
                   <Table.Td>{fmt$(spend)}</Table.Td>
                   <Table.Td>{conversions > 0 ? `${conversions} ${conversions === 1 ? 'Result' : 'Results'}` : '0 Results'}</Table.Td>
-                  <Table.Td>{conversions > 0 ? fmt$(spend / conversions) : '$0.00'}</Table.Td>
+                  <Table.Td>{conversions > 0 ? fmt$(spend / conversions) : fmt$(0)}</Table.Td>
                   <Table.Td>{fmtPct(ad.ctr != null ? Number(ad.ctr) : 0)}</Table.Td>
                   <Table.Td>{ad.cpc != null ? fmt$(Number(ad.cpc)) : '—'}</Table.Td>
                   <Table.Td>{ad.cpm != null ? fmt$(Number(ad.cpm)) : '—'}</Table.Td>
@@ -400,7 +407,7 @@ export default function AdsTable({
                         <Tooltip label="Preview">
                           <ActionIcon
                             variant="filled"
-                            color={platformColor}
+                            color={ACTION_COLOR}
                             component="a"
                             href={previewImage}
                             target="_blank"
@@ -411,12 +418,17 @@ export default function AdsTable({
                       )}
                       <Menu position="bottom-end" withArrow>
                         <Menu.Target>
-                          <ActionIcon>
+                          <ActionIcon variant="filled" color={ACTION_COLOR}>
                             <IconDots size={16} />
                           </ActionIcon>
                         </Menu.Target>
                         <Menu.Dropdown>
-                          <Menu.Item leftSection={<IconPencil size={16} />}>
+                          <Menu.Item
+                            leftSection={<IconPencil size={16} />}
+                            component="a"
+                            href={`/ads/${id}/edit`}
+                            onClick={(event) => event.stopPropagation()}
+                          >
                             Edit Ad
                           </Menu.Item>
                           <Menu.Item

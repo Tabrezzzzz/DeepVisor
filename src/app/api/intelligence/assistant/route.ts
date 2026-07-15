@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRequiredAppContext } from '@/lib/server/actions/app/context';
+import { consumeRateLimit, rateLimitResponse } from '@/lib/server/security/rateLimit';
 import { createAdminClient } from '@/lib/server/supabase/admin';
 import { buildGlobalAiAssistantPayload } from '@/lib/server/intelligence';
 import { answerAssistantQuestion } from '@/lib/server/intelligence/assistant/service';
@@ -13,7 +14,18 @@ type AssistantBody = {
 
 export async function POST(request: NextRequest) {
   try {
-    const { businessId } = await getRequiredAppContext();
+    const { businessId, user } = await getRequiredAppContext();
+    const limiter = await consumeRateLimit({
+      identifier: `user:${user.id}:business:${businessId}`,
+      action: 'ai.assistant',
+      limit: 60,
+      windowSeconds: 60 * 60,
+    });
+
+    if (!limiter.allowed) {
+      return rateLimitResponse(limiter);
+    }
+
     const body = (await request.json().catch(() => ({}))) as AssistantBody;
     const question = body.question?.trim();
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Stakeholder Alignment"
+  short_description: "Help with Stakeholder Alignment tasks"
+  default_prompt: "Use (stakeholder-alignment.Name) to handle this task."

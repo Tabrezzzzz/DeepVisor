@@ -1,0 +1,4 @@
+interface:
+  display_name: "Woocommerce"
+  short_description: "Help with Woocommerce tasks"
+  default_prompt: "Use  to build or review a WooCommerce implementation."

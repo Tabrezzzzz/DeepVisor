@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { getRequiredAppContext } from '@/lib/server/actions/app/context';
 import { resolveCurrentSelection } from '@/lib/server/actions/app/selection';
+import { logAuditEvent } from '@/lib/server/audit/logAuditEvent';
 import { syncMetaTrendIntelligenceArtifactsForQueueState } from '@/lib/server/intelligence/trends/service';
+import { consumeRateLimit, rateLimitResponse } from '@/lib/server/security/rateLimit';
 import { createAdminClient } from '@/lib/server/supabase/admin';
 import { toTrendFindingView } from '@/lib/server/intelligence/repositories/trendFindings';
 
@@ -9,6 +12,11 @@ type RunFindingsBody = {
   platformIntegrationId?: string | null;
   adAccountId?: string | null;
 };
+
+const runFindingsSchema = z.object({
+  platformIntegrationId: z.string().uuid().nullable().optional(),
+  adAccountId: z.string().uuid().nullable().optional(),
+});
 
 async function validateAccount(
   supabase: ReturnType<typeof createAdminClient>,
@@ -33,9 +41,28 @@ async function validateAccount(
 
 export async function POST(request: NextRequest) {
   try {
-    const { businessId } = await getRequiredAppContext();
+    const { businessId, organizationId, user } = await getRequiredAppContext();
+    const limiter = await consumeRateLimit({
+      identifier: `user:${user.id}:business:${businessId}`,
+      action: 'intelligence.findings.run',
+      limit: 12,
+      windowSeconds: 60 * 60,
+    });
+
+    if (!limiter.allowed) {
+      return rateLimitResponse(limiter);
+    }
+
     const selection = await resolveCurrentSelection(businessId);
-    const body = (await request.json().catch(() => ({}))) as RunFindingsBody;
+    const parsed = runFindingsSchema.safeParse(await request.json().catch(() => ({})));
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid findings refresh payload.' },
+        { status: 400 }
+      );
+    }
+
+    const body = parsed.data as RunFindingsBody;
     const adAccountId = body.adAccountId ?? selection.selectedAdAccountId ?? null;
     const platformIntegrationId =
       body.platformIntegrationId ?? selection.selectedPlatformId ?? null;
@@ -66,6 +93,23 @@ export async function POST(request: NextRequest) {
       platformIntegrationId,
       adAccountId,
       forceRefresh: true,
+    });
+
+    await logAuditEvent(supabase, {
+      businessId,
+      organizationId,
+      actorUserId: user.id,
+      eventType: 'sync.intelligence_findings_run',
+      resourceType: 'ad_account',
+      resourceId: adAccountId,
+      platformIntegrationId,
+      metadata: {
+        refreshMode: result.refreshMode,
+        findingCount: result.findings.length,
+        patternCount: result.patternCount,
+      },
+      ipAddress: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? request.headers.get('x-real-ip'),
+      userAgent: request.headers.get('user-agent'),
     });
 
     return NextResponse.json({

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Typography Scale"
+  short_description: "Help with Typography Scale tasks"
+  default_prompt: "Use (typography-scale.Name) to handle this task."

@@ -1,51 +1,53 @@
-import type { Icon } from '@tabler/icons-react';
+import type { LucideIcon } from 'lucide-react';
 import {
-  IconBell,
-  IconCalendarMonth,
-  IconChartBar,
-  IconHome2,
-  IconPresentation,
-  IconPuzzle,
-  IconSettings,
-  IconUser,
-} from '@tabler/icons-react';
+  BarChart3,
+  CalendarDays,
+  CheckCircle2,
+  FileText,
+  Gauge,
+  Lightbulb,
+  UsersRound,
+  Settings,
+  User,
+  Bell,
+  Plug,
+} from 'lucide-react';
 
 export type AppNavItem = {
   name: string;
   shortName: string;
-  icon: Icon;
+  icon: LucideIcon;
   route: string;
 };
 
 export const primaryNavItems: AppNavItem[] = [
-  { name: 'Home', shortName: 'Home', icon: IconHome2, route: '/dashboard' },
-  { name: 'Calendar', shortName: 'Calendar', icon: IconCalendarMonth, route: '/calendar' },
-  { name: 'Campaigns', shortName: 'Campaigns', icon: IconPresentation, route: '/campaigns' },
-  { name: 'Reports', shortName: 'Reports', icon: IconChartBar, route: '/reports' },
-  { name: 'Integration', shortName: 'Connect', icon: IconPuzzle, route: '/integration' },
+  { name: 'Overview', shortName: 'Overview', icon: Gauge, route: '/dashboard' },
+  { name: 'Campaigns', shortName: 'Campaigns', icon: BarChart3, route: '/campaigns' },
+  { name: 'Leads', shortName: 'Leads', icon: UsersRound, route: '/leads' },
+  { name: 'Insights', shortName: 'Insights', icon: Lightbulb, route: '/insights' },
+  { name: 'Reports', shortName: 'Reports', icon: FileText, route: '/reports' },
+  { name: 'Calendar', shortName: 'Calendar', icon: CalendarDays, route: '/calendar' },
+  { name: 'Approvals', shortName: 'Approvals', icon: CheckCircle2, route: '/notifications' },
+  { name: 'Integrations', shortName: 'Connect', icon: Plug, route: '/integration' },
 ];
 
 export const secondaryNavItems: AppNavItem[] = [
-  { name: 'Settings', shortName: 'Settings', icon: IconSettings, route: '/settings' },
-  { name: 'Profile', shortName: 'Profile', icon: IconUser, route: '/settings/profile' },
-  { name: 'Notifications', shortName: 'Alerts', icon: IconBell, route: '/notifications' },
+  { name: 'Settings', shortName: 'Settings', icon: Settings, route: '/settings' },
+  { name: 'Profile', shortName: 'Profile', icon: User, route: '/settings/profile' },
+  { name: 'Notifications', shortName: 'Alerts', icon: Bell, route: '/notifications' },
 ];
 
 export const mobileBottomNavItems: AppNavItem[] = [
-  { name: 'Dashboard', shortName: 'Home', icon: IconHome2, route: '/dashboard' },
-  { name: 'Calendar', shortName: 'Calendar', icon: IconCalendarMonth, route: '/calendar' },
-  { name: 'Notifications', shortName: 'Alerts', icon: IconBell, route: '/notifications' },
-  { name: 'Settings', shortName: 'Settings', icon: IconSettings, route: '/settings' },
+  { name: 'Overview', shortName: 'Overview', icon: Gauge, route: '/dashboard' },
+  { name: 'Campaigns', shortName: 'Campaigns', icon: BarChart3, route: '/campaigns' },
+  { name: 'Leads', shortName: 'Leads', icon: UsersRound, route: '/leads' },
+  { name: 'Insights', shortName: 'Insights', icon: Lightbulb, route: '/insights' },
+  { name: 'Reports', shortName: 'Reports', icon: FileText, route: '/reports' },
+  { name: 'Integrations', shortName: 'Connect', icon: Plug, route: '/integration' },
 ];
 
 export function isAppNavItemActive(pathname: string | null, route: string): boolean {
-  if (!pathname) {
-    return false;
-  }
-
-  if (route === '/dashboard') {
-    return pathname === '/' || pathname === '/dashboard';
-  }
-
+  if (!pathname) return false;
+  if (route === '/dashboard') return pathname === '/' || pathname === '/dashboard';
   return pathname === route || pathname.startsWith(`${route}/`);
 }

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Color System"
+  short_description: "Help with Color System tasks"
+  default_prompt: "Use (color-system.Name) to handle this task."

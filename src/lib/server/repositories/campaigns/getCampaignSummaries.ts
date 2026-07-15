@@ -12,6 +12,7 @@ type CampaignDimRow = {
   objective: string | null;
   status: string | null;
   created_time: string | null;
+  optimization_goal?: string | null;
 };
 
 type CampaignPerformanceRow = {
@@ -27,7 +28,7 @@ type CampaignPerformanceRow = {
 };
 
 type CampaignPerformanceSummaryRow = {
-  campaign_id: string;
+  entity_id: string;
   spend: number | null;
   reach: number | null;
   impressions: number | null;
@@ -37,6 +38,15 @@ type CampaignPerformanceSummaryRow = {
   messages: number | null;
   first_day: string | null;
   last_day: string | null;
+  conversions?: number | null;
+  all_conversions?: number | null;
+  conversion_value?: number | null;
+  all_conversion_value?: number | null;
+  cpa?: number | null;
+  roas?: number | null;
+  search_impression_share?: number | null;
+  search_budget_lost_impression_share?: number | null;
+  search_rank_lost_impression_share?: number | null;
 };
 
 export interface CampaignSummary {
@@ -53,6 +63,13 @@ export interface CampaignSummary {
   linkClicks: number;
   leads: number;
   messages: number;
+  conversions: number;
+  conversionValue: number;
+  cpa: number | null;
+  roas: number | null;
+  searchImpressionShare: number | null;
+  searchBudgetLostImpressionShare: number | null;
+  searchRankLostImpressionShare: number | null;
   conversion: number;
   conversionRate: number;
   costPerResult: number;
@@ -96,6 +113,18 @@ async function listCampaignDims(input: {
       }
 
       rows.push(...((data ?? []) as CampaignDimRow[]));
+
+      const { data: entityData, error: entityError } = await input.supabase
+        .from('ad_entities')
+        .select('id, ad_account_id, external_id, name, objective, optimization_goal, status, created_time')
+        .in('ad_account_id', adAccountIdsChunk)
+        .eq('entity_level', 'campaign');
+
+      if (entityError) {
+        throw entityError;
+      }
+
+      rows.push(...((entityData ?? []) as CampaignDimRow[]));
       continue;
     }
 
@@ -111,10 +140,23 @@ async function listCampaignDims(input: {
       }
 
       rows.push(...((data ?? []) as CampaignDimRow[]));
+
+      const { data: entityData, error: entityError } = await input.supabase
+        .from('ad_entities')
+        .select('id, ad_account_id, external_id, name, objective, optimization_goal, status, created_time')
+        .in('ad_account_id', adAccountIdsChunk)
+        .eq('entity_level', 'campaign')
+        .in('external_id', externalIdsChunk);
+
+      if (entityError) {
+        throw entityError;
+      }
+
+      rows.push(...((entityData ?? []) as CampaignDimRow[]));
     }
   }
 
-  return rows;
+  return Array.from(new Map(rows.map((row) => [`${row.ad_account_id}:${row.external_id}`, row])).values());
 }
 
 async function listCampaignPerformanceRows(input: {
@@ -155,18 +197,31 @@ async function listCampaignPerformanceSummaries(input: {
   const rows: CampaignPerformanceSummaryRow[] = [];
 
   for (const campaignIdsChunk of chunkArray(input.campaignIds, 200)) {
-    const { data, error } = await input.supabase
-      .from('campaign_performance_summary')
-      .select(
-        'campaign_id, spend, reach, impressions, clicks, inline_link_clicks, leads, messages, first_day, last_day'
-      )
-      .in('campaign_id', campaignIdsChunk);
+    const [legacyResult, entityResult] = await Promise.all([
+      input.supabase
+        .from('campaign_performance_summary')
+        .select(
+          'entity_id, spend, reach, impressions, clicks, inline_link_clicks, leads, messages, first_day, last_day'
+        )
+        .in('entity_id', campaignIdsChunk),
+      input.supabase
+        .from('ad_entity_performance_summary')
+        .select(
+          'entity_id, spend, reach, impressions, clicks, inline_link_clicks, leads, messages, conversions, all_conversions, conversion_value, all_conversion_value, cpa, roas, search_impression_share, search_budget_lost_impression_share, search_rank_lost_impression_share, first_day, last_day'
+        )
+        .in('entity_id', campaignIdsChunk),
+    ]);
 
-    if (error) {
-      throw error;
+    if (legacyResult.error) {
+      throw legacyResult.error;
     }
 
-    rows.push(...((data ?? []) as CampaignPerformanceSummaryRow[]));
+    if (entityResult.error) {
+      throw entityResult.error;
+    }
+
+    rows.push(...((legacyResult.data ?? []) as CampaignPerformanceSummaryRow[]));
+    rows.push(...((entityResult.data ?? []) as CampaignPerformanceSummaryRow[]));
   }
 
   return rows;
@@ -210,6 +265,13 @@ export async function getCampaignSummaries(input: {
         linkClicks: 0,
         leads: 0,
         messages: 0,
+        conversions: 0,
+        conversionValue: 0,
+        cpa: null as number | null,
+        roas: null as number | null,
+        searchImpressionShare: null as number | null,
+        searchBudgetLostImpressionShare: null as number | null,
+        searchRankLostImpressionShare: null as number | null,
         firstDay: null as string | null,
         lastDay: null as string | null,
         rowCount: 0,
@@ -228,7 +290,7 @@ export async function getCampaignSummaries(input: {
     }
 
     for (const row of summaryRows) {
-      const totals = totalsByCampaignId.get(row.campaign_id);
+      const totals = totalsByCampaignId.get(row.entity_id);
       if (!totals) {
         continue;
       }
@@ -240,6 +302,13 @@ export async function getCampaignSummaries(input: {
       totals.linkClicks = row.inline_link_clicks ?? 0;
       totals.leads = row.leads ?? 0;
       totals.messages = row.messages ?? 0;
+      totals.conversions = row.conversions ?? row.leads ?? 0;
+      totals.conversionValue = row.conversion_value ?? row.all_conversion_value ?? 0;
+      totals.cpa = row.cpa ?? null;
+      totals.roas = row.roas ?? null;
+      totals.searchImpressionShare = row.search_impression_share ?? null;
+      totals.searchBudgetLostImpressionShare = row.search_budget_lost_impression_share ?? null;
+      totals.searchRankLostImpressionShare = row.search_rank_lost_impression_share ?? null;
       totals.firstDay = row.first_day ?? null;
       totals.lastDay = row.last_day ?? null;
       totals.rowCount = 1;
@@ -311,6 +380,13 @@ export async function getCampaignSummaries(input: {
         linkClicks: totals.linkClicks,
         leads: totals.leads,
         messages: totals.messages,
+        conversions: totals.conversions,
+        conversionValue: totals.conversionValue,
+        cpa: totals.cpa,
+        roas: totals.roas,
+        searchImpressionShare: totals.searchImpressionShare,
+        searchBudgetLostImpressionShare: totals.searchBudgetLostImpressionShare,
+        searchRankLostImpressionShare: totals.searchRankLostImpressionShare,
         conversion: metrics.conversion,
         conversionRate: metrics.conversion_rate,
         costPerResult: metrics.cost_per_result,

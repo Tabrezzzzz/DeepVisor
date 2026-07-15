@@ -1,6 +1,6 @@
 'use client';
 
-import { type CSSProperties, type FormEvent, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Anchor,
@@ -46,50 +46,35 @@ type Choice = {
 };
 
 const SITUATION_OPTIONS: Choice[] = [
-  { value: 'running_ads', label: 'I already run Facebook/Instagram ads' },
-  { value: 'boosted_posts', label: 'I have boosted posts before' },
-  { value: 'starting_ads', label: 'I want to start running ads' },
-  { value: 'not_sure', label: 'I am not sure' },
+  { value: 'running_ads', label: 'We already run paid ads' },
+  { value: 'agency_clients', label: 'We manage ads for clients' },
+  { value: 'starting_ads', label: 'We are preparing to scale paid ads' },
+  { value: 'not_sure', label: 'We need clearer performance reporting' },
 ];
 
 const GOAL_OPTIONS: Choice[] = [
-  { value: 'bookings', label: 'More bookings' },
-  { value: 'messages', label: 'More messages' },
-  { value: 'calls', label: 'More calls' },
-  { value: 'form_leads', label: 'More form leads' },
-  { value: 'roi', label: 'Better ROI from current ads' },
-  { value: 'less_waste', label: 'Less wasted ad spend' },
+  { value: 'reduce_waste', label: 'Reduce wasted spend' },
+  { value: 'improve_roas', label: 'Improve ROAS' },
+  { value: 'lower_cpl', label: 'Lower CPL' },
+  { value: 'lead_quality', label: 'Improve lead quality' },
+  { value: 'client_reports', label: 'Generate better reports' },
+  { value: 'approval_queue', label: 'Review AI recommendations' },
 ];
 
 const LEAD_OPTIONS: Choice[] = [
-  { value: 'messages', label: 'Instagram/Facebook messages' },
-  { value: 'calls', label: 'Phone calls' },
-  { value: 'lead_form', label: 'Lead form' },
-  { value: 'booking_link', label: 'Booking link' },
-  { value: 'recommend', label: 'Not sure, recommend one' },
+  { value: 'qualified_leads', label: 'Qualified leads' },
+  { value: 'sales_calls', label: 'Sales calls' },
+  { value: 'lead_form', label: 'Lead forms' },
+  { value: 'purchases', label: 'Purchases' },
+  { value: 'pipeline', label: 'Pipeline opportunities' },
 ];
 
 const TRUST_ITEMS = [
-  'Secure Meta connection',
+  'Secure platform connection',
   'No automatic budget increases',
   '30-day free test',
-  'You approve changes before anything goes live',
+  'You approve actions before execution',
 ];
-
-function AnimatedWelcome() {
-  return (
-    <div className={classes.animatedWelcome} aria-label="Welcome">
-      {'Welcome'.split('').map((letter, index) => (
-        <span
-          key={`${letter}-${index}`}
-          style={{ '--letter-index': index } as CSSProperties}
-        >
-          {letter}
-        </span>
-      ))}
-    </div>
-  );
-}
 
 function ChoiceGrid({
   options,
@@ -329,16 +314,15 @@ export default function AuthForm({ type }: AuthFormProps) {
     return (
       <div className={classes.loginShell}>
         <section className={classes.loginIntro}>
-          <Badge variant="light" color="blue" radius="xl" className={classes.salonBadge}>
+          <Badge variant="light" color="orange" radius="xl" className={classes.authBadge}>
             DeepVisor workspace
           </Badge>
-          <AnimatedWelcome />
           <Title order={1} className={classes.introTitle}>
-            Pick up where your lead intelligence left off.
+            Pick up where your performance review left off.
           </Title>
           <Text className={classes.introCopy}>
-            Sign in to review the latest ad account signals, queued next steps, and
-            owner-ready reports from one focused workspace.
+            Sign in to review ad account signals, spend alerts, reports, and
+            approval-ready next actions from one focused workspace.
           </Text>
           <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm" className={classes.loginMetricGrid}>
             {[
@@ -362,7 +346,7 @@ export default function AuthForm({ type }: AuthFormProps) {
         <Paper shadow="xl" radius="xl" p="xl" withBorder className={classes.loginCard}>
           <Stack gap="lg">
             <div>
-              <ThemeIcon size={52} radius="lg" color="blue" variant="light">
+              <ThemeIcon size={52} radius="lg" color="orange" variant="light">
                 <IconSparkles size={26} />
               </ThemeIcon>
               <Title order={2} mt="md">
@@ -449,16 +433,15 @@ export default function AuthForm({ type }: AuthFormProps) {
   return (
     <div className={classes.signupShell}>
       <section className={classes.signupIntro}>
-        <Badge variant="light" color="blue" radius="xl" className={classes.salonBadge}>
-          Built for salons running Meta ads
+        <Badge variant="light" color="orange" radius="xl" className={classes.authBadge}>
+          Built for performance marketers
         </Badge>
-        <AnimatedWelcome />
         <Title order={1} className={classes.introTitle}>
-          Grow your salon with smarter Meta ads.
+          Turn paid ad performance into approved next actions.
         </Title>
         <Text className={classes.introCopy}>
-          DeepVisor helps salons understand what ads are bringing leads, what is wasting
-          money, and what to improve next.
+          DeepVisor helps teams understand what campaigns are driving qualified leads,
+          what is wasting budget, and what to improve next.
         </Text>
         <div className={classes.colorOrbit} aria-hidden="true">
           <span />
@@ -496,14 +479,14 @@ export default function AuthForm({ type }: AuthFormProps) {
 
           {signupStep === 0 ? (
             <Stack gap="lg">
-              <ThemeIcon size={54} radius="lg" color="blue" variant="light">
+              <ThemeIcon size={54} radius="lg" color="orange" variant="light">
                 <IconSparkles size={28} />
               </ThemeIcon>
               <div>
-                <Title order={2}>Grow your salon with smarter Meta ads.</Title>
+                <Title order={2}>Build your AI performance marketing workspace.</Title>
                 <Text c="dimmed" mt="sm">
-                  Answer a few quick questions so DeepVisor can personalize setup before
-                  your free account is created.
+                  Answer a few quick questions so DeepVisor can personalize your dashboard,
+                  reports, insights, and approval queue.
                 </Text>
               </div>
               <Button
@@ -539,7 +522,7 @@ export default function AuthForm({ type }: AuthFormProps) {
           {signupStep === 2 ? (
             <Stack gap="md">
               <div>
-                <Title order={2}>What do you want more of?</Title>
+              <Title order={2}>What should DeepVisor improve first?</Title>
                 <Text c="dimmed" mt={6}>
                   This helps us prioritize the first dashboard experience.
                 </Text>
@@ -558,9 +541,9 @@ export default function AuthForm({ type }: AuthFormProps) {
           {signupStep === 3 ? (
             <Stack gap="md">
               <div>
-                <Title order={2}>How do you prefer new clients to contact you?</Title>
+              <Title order={2}>Which conversion signal matters most?</Title>
                 <Text c="dimmed" mt={6}>
-                  DeepVisor will keep the recommendation focused on your lead path.
+                  DeepVisor will keep recommendations tied to the outcome your team values.
                 </Text>
               </div>
               <ChoiceGrid
@@ -621,7 +604,7 @@ export default function AuthForm({ type }: AuthFormProps) {
                   </Button>
                 </Group>
                 <Text c="dimmed" mt={6}>
-                  Salon and business details come after signup.
+                  Workspace details come after signup.
                 </Text>
               </div>
 
@@ -659,7 +642,7 @@ export default function AuthForm({ type }: AuthFormProps) {
                   </SimpleGrid>
                   <TextInput
                     label="Email"
-                    placeholder="you@salon.com"
+                    placeholder="you@company.com"
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}

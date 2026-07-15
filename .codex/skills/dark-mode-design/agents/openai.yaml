@@ -1,0 +1,4 @@
+interface:
+  display_name: "Dark Mode Design"
+  short_description: "Help with Dark Mode Design tasks"
+  default_prompt: "Use (dark-mode-design.Name) to handle this task."

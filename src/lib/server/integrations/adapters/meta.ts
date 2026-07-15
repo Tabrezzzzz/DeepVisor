@@ -18,6 +18,7 @@ const META_DEFAULT_OAUTH_SCOPES = [
   'business_management',
   'pages_show_list',
   'pages_read_engagement',
+  'leads_retrieval',
   'instagram_basic',
 ];
 
@@ -28,6 +29,7 @@ export function buildMetaOAuthUrl(input: MetaOAuthBuildInput): URL {
   oauthUrl.searchParams.set('redirect_uri', input.redirectUri);
   oauthUrl.searchParams.set('state', input.state);
   oauthUrl.searchParams.set('response_type', 'code');
+  oauthUrl.searchParams.set('auth_type', 'rerequest');
 
   const configId = process.env.META_BUSINESS_CONFIG_ID;
   if (configId) {
@@ -82,6 +84,10 @@ export async function exchangeMetaCodeForToken(input: MetaExchangeCodeInput): Pr
  * @throws When Meta reports that the token is invalid or unusable.
  */
 export async function validateMetaAccessToken(accessToken: string): Promise<void> {
+  await fetchMetaUserId(accessToken);
+}
+
+export async function fetchMetaUserId(accessToken: string): Promise<string> {
   const url = new URL('https://graph.facebook.com/me');
   url.searchParams.set('fields', 'id');
   url.searchParams.set('access_token', accessToken);
@@ -94,6 +100,13 @@ export async function validateMetaAccessToken(accessToken: string): Promise<void
       : 'Meta token validation failed';
     throw new Error(message);
   }
+
+  const data = (await response.json()) as { id?: unknown };
+  if (typeof data.id !== 'string' || data.id.length === 0) {
+    throw new Error('Meta token validation did not return a user id');
+  }
+
+  return data.id;
 }
 
 function normalizeMetaStatus(status: string | number | null | undefined | unknown): string | null {

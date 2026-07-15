@@ -18,6 +18,13 @@ export type UpsertAdEntityPerformanceDailyInput = {
   leads: number;
   messages: number;
   calls: number;
+  conversions?: number;
+  allConversions?: number;
+  conversionValue?: number;
+  allConversionValue?: number;
+  searchImpressionShare?: number | null;
+  searchBudgetLostImpressionShare?: number | null;
+  searchRankLostImpressionShare?: number | null;
   syncedAt: string;
 };
 
@@ -38,6 +45,13 @@ type DailyRow = {
   leads: number;
   messages: number;
   calls: number;
+  conversions: number;
+  all_conversions: number;
+  conversion_value: number;
+  all_conversion_value: number;
+  search_impression_share: number | null;
+  search_budget_lost_impression_share: number | null;
+  search_rank_lost_impression_share: number | null;
   updated_at: string;
 };
 
@@ -67,6 +81,13 @@ export async function upsertAdEntityPerformanceDaily(
         leads: input.leads,
         messages: input.messages,
         calls: input.calls,
+        conversions: input.conversions ?? input.leads,
+        all_conversions: input.allConversions ?? input.leads,
+        conversion_value: input.conversionValue ?? 0,
+        all_conversion_value: input.allConversionValue ?? input.conversionValue ?? 0,
+        search_impression_share: input.searchImpressionShare ?? null,
+        search_budget_lost_impression_share: input.searchBudgetLostImpressionShare ?? null,
+        search_rank_lost_impression_share: input.searchRankLostImpressionShare ?? null,
         updated_at: input.syncedAt,
       }) satisfies DailyRow
   );

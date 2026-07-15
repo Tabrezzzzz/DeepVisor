@@ -15,25 +15,27 @@ type Platform = {
     statusClassName: string;
 };
 
-const metaPlatform: Platform = {
-    name: "Meta",
-    status: "Active Sync",
-    icon: SiMeta,
-    iconClassName: "text-[#4da3ff]",
-    iconSurfaceClassName: "border-white/10 bg-white/10",
-    glowClassName: "from-[#1877F2]/30 via-sky-400/12 to-violet-400/18",
-    statusClassName: "border-emerald-400/25 bg-emerald-400/10 text-emerald-200",
-};
-
-const plannedPlatforms: Platform[] = [
+const activePlatforms: Platform[] = [
+    {
+        name: "Meta",
+        status: "Active Sync",
+        icon: SiMeta,
+        iconClassName: "text-[#4da3ff]",
+        iconSurfaceClassName: "border-white/10 bg-white/10",
+        glowClassName: "from-[#1877F2]/30 via-sky-400/12 to-violet-400/18",
+        statusClassName: "border-emerald-400/25 bg-emerald-400/10 text-emerald-200",
+    },
     {
         name: "Google Ads",
-        status: "Planned",
+        status: "Active Sync",
         icon: SiGoogleads,
         iconClassName: "text-[#4285F4]",
         glowClassName: "from-[#4285F4]/20 via-[#34A853]/12 to-[#FBBC05]/18",
-        statusClassName: "border-slate-200 bg-white/90 text-slate-500",
+        statusClassName: "border-emerald-400/25 bg-emerald-400/10 text-emerald-200",
     },
+];
+
+const plannedPlatforms: Platform[] = [
     {
         name: "Amazon Ads",
         status: "Planned",
@@ -113,7 +115,7 @@ const LogoChip = ({ platform, featured = false }: { platform: Platform; featured
                         </div>
 
                         <div>
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/45">Current integration</p>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/45">Active integration</p>
                             <h3 className="mt-1 text-2xl font-semibold text-white">{platform.name}</h3>
                         </div>
                     </div>
@@ -182,12 +184,14 @@ const IntegrationsSection: FC = () => {
                         Keep the selected ad account clear across every platform.
                     </h2>
                     <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-slate-600 sm:text-base">
-                        Meta is the active foundation today. The product is shaped so Google Ads, TikTok Ads, and future channels can each expose one primary ad account for focused dashboard, calendar, campaign, and report views.
+                        Meta and Google Ads are active integration tracks for selected-account dashboards, reporting, calendar queues, and campaign intelligence. Future channels follow the same one-primary-account operating model.
                     </p>
                 </div>
 
-                <div className="mx-auto mt-8 max-w-2xl">
-                    <LogoChip platform={metaPlatform} featured />
+                <div className="mx-auto mt-8 grid max-w-4xl gap-4 md:grid-cols-2">
+                    {activePlatforms.map((platform) => (
+                        <LogoChip key={platform.name} platform={platform} featured />
+                    ))}
                 </div>
 
                 <div className="mt-8">

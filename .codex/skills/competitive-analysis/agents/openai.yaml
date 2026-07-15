@@ -1,0 +1,4 @@
+interface:
+  display_name: "Competitive Analysis"
+  short_description: "Help with Competitive Analysis tasks"
+  default_prompt: "Use (competitive-analysis.Name) to handle this task."

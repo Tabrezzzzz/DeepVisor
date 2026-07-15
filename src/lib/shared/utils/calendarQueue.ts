@@ -317,7 +317,7 @@ export function buildCalendarQueuePreviewItems(
     1: [
       {
         title: `Review weekend lead quality in ${accountName}`,
-        description: 'Looks at lead quality drift and booking performance after the weekend.',
+        description: 'Looks at lead quality drift and sales-call conversion after the weekend.',
         time: '8:30 AM',
         durationMinutes: 45,
         channel: 'Analysis',
@@ -334,8 +334,8 @@ export function buildCalendarQueuePreviewItems(
         source: 'agent',
       },
       {
-        title: 'Check Monday call-booking quality against CRM',
-        description: 'Verifies that booked calls are still matching the best-performing ad sets.',
+        title: 'Check Monday qualified-call quality against CRM',
+        description: 'Verifies that qualified calls are still matching the best-performing ad sets.',
         time: '10:00 AM',
         durationMinutes: 40,
         channel: 'Attribution',

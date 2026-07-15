@@ -1,5 +1,6 @@
 'use client';
 
+import type { ComponentType } from 'react';
 import { Card, Group, Text, ThemeIcon, Badge, SimpleGrid } from '@mantine/core';
 import {
   IconChartBar, IconCurrencyDollar, IconEye, IconClick,
@@ -27,7 +28,7 @@ interface CampaignStatsProps {
 export default function CampaignStats({
   totalCampaigns,
   accountMetrics,
-  platformColor = 'blue'
+  platformColor = 'orange'
 }: CampaignStatsProps) {
   const totalResults = accountMetrics.leads + accountMetrics.messages;
   const costPerResult = totalResults > 0 ? accountMetrics.spend / totalResults : 0;
@@ -42,7 +43,7 @@ export default function CampaignStats({
   const formatCurrency = (num: number): string => `$${num.toFixed(2)}`;
 
   return (
-    <Card withBorder radius="lg" p="md" style={{ background: 'linear-gradient(135deg, rgba(14,165,233,0.06), rgba(14,165,233,0.02))' }}>
+    <Card withBorder radius="lg" p="md" style={{ background: 'linear-gradient(135deg, rgba(253,75,35,0.08), rgba(253,75,35,0.02))' }}>
       <SimpleGrid cols={{ base: 1, sm: 2, md: 3, lg: 4 }} spacing="md">
         <StatCard
           label="Campaigns"
@@ -69,14 +70,14 @@ export default function CampaignStats({
           label="Reach"
           value={formatNumber(accountMetrics.reach)}
           helper="Unique viewers"
-          color="blue"
+          color="orange"
           icon={IconUsers}
         />
         <StatCard
           label="Impressions"
           value={formatNumber(accountMetrics.impressions)}
           helper={`${formatCurrency(accountMetrics.cpm)} CPM`}
-          color="violet"
+          color="orange"
           icon={IconEye}
         />
         <StatCard
@@ -90,7 +91,7 @@ export default function CampaignStats({
           label="Link clicks"
           value={formatNumber(accountMetrics.link_clicks)}
           helper="Deep link outs"
-          color="indigo"
+          color="orange"
           icon={IconArrowAutofitRight}
         />
         <StatCard
@@ -116,8 +117,7 @@ function StatCard({
   value: string;
   helper: string;
   color: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  icon: any;
+  icon: ComponentType<{ size?: number }>;
 }) {
   return (
     <Card withBorder radius="md" p="md" style={{ borderColor: 'var(--mantine-color-gray-3)' }}>

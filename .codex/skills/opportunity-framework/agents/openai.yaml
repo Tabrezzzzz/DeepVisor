@@ -1,0 +1,4 @@
+interface:
+  display_name: "Opportunity Framework"
+  short_description: "Help with Opportunity Framework tasks"
+  default_prompt: "Use (opportunity-framework.Name) to handle this task."

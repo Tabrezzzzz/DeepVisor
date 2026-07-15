@@ -3,6 +3,7 @@ import { getLoggedInUserOrRedirect } from '@/lib/server/actions/user/account';
 import { getOnboardingInitial } from '@/lib/server/actions/business/onboarding';
 import { Button, Container, Paper, Stack, Text, Title } from '@mantine/core';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 
 export default async function OnboardingPage() {
   const user = await getLoggedInUserOrRedirect();
@@ -31,6 +32,10 @@ export default async function OnboardingPage() {
   }
 
   const init = res.data;
+
+  if (init.completed) {
+    redirect('/dashboard');
+  }
 
   return <OnboardingProvider initial={init} userId={user.id} />;
 }

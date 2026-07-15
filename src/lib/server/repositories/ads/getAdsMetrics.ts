@@ -84,6 +84,7 @@ async function listAdDims(input: {
   adsetExternalId?: string;
   adExternalId?: string;
 }): Promise<AdDimRow[]> {
+  const rows: AdDimRow[] = [];
   let query = input.supabase
     .from('ad_dims')
     .select('id, external_id, adset_external_id, name, creative_id, status, raw, created_time')
@@ -102,7 +103,50 @@ async function listAdDims(input: {
     throw error;
   }
 
-  return (data ?? []) as AdDimRow[];
+  rows.push(...((data ?? []) as AdDimRow[]));
+
+  let entityQuery = input.supabase
+    .from('ad_entities')
+    .select('id, external_id, parent_external_id, name, creative_external_id, status, raw, created_time')
+    .eq('ad_account_id', input.adAccountId)
+    .eq('entity_level', 'ad');
+
+  if (input.adsetExternalId) {
+    entityQuery = entityQuery.eq('parent_external_id', input.adsetExternalId);
+  }
+
+  if (input.adExternalId) {
+    entityQuery = entityQuery.eq('external_id', input.adExternalId);
+  }
+
+  const { data: entityData, error: entityError } = await entityQuery;
+  if (entityError) {
+    throw entityError;
+  }
+
+  rows.push(
+    ...((entityData ?? []) as Array<{
+      id: string;
+      external_id: string;
+      parent_external_id: string | null;
+      name: string | null;
+      creative_external_id: string | null;
+      status: string | null;
+      raw: Json | null;
+      created_time: string | null;
+    }>).map((row) => ({
+      id: row.id,
+      external_id: row.external_id,
+      adset_external_id: row.parent_external_id ?? '',
+      name: row.name,
+      creative_id: row.creative_external_id,
+      status: row.status,
+      raw: row.raw,
+      created_time: row.created_time,
+    }))
+  );
+
+  return Array.from(new Map(rows.map((row) => [row.external_id, row])).values());
 }
 
 async function listAdPerformanceRows(input: {
@@ -150,6 +194,29 @@ async function listAdsetLookups(input: {
     for (const row of (data ?? []) as AdsetLookupRow[]) {
       rowsByExternalId.set(row.external_id, row);
     }
+
+    const { data: entityData, error: entityError } = await input.supabase
+      .from('ad_entities')
+      .select('external_id, parent_external_id, name')
+      .eq('ad_account_id', input.adAccountId)
+      .eq('entity_level', 'adset')
+      .in('external_id', adsetExternalIdsChunk);
+
+    if (entityError) {
+      throw entityError;
+    }
+
+    for (const row of (entityData ?? []) as Array<{
+      external_id: string;
+      parent_external_id: string | null;
+      name: string | null;
+    }>) {
+      rowsByExternalId.set(row.external_id, {
+        external_id: row.external_id,
+        campaign_external_id: row.parent_external_id ?? '',
+        name: row.name,
+      });
+    }
   }
 
   return rowsByExternalId;
@@ -174,6 +241,21 @@ async function listCampaignNames(input: {
     }
 
     for (const row of (data ?? []) as CampaignLookupRow[]) {
+      campaignNameByExternalId.set(row.external_id, row.name || 'Unnamed campaign');
+    }
+
+    const { data: entityData, error: entityError } = await input.supabase
+      .from('ad_entities')
+      .select('external_id, name')
+      .eq('ad_account_id', input.adAccountId)
+      .eq('entity_level', 'campaign')
+      .in('external_id', campaignExternalIdsChunk);
+
+    if (entityError) {
+      throw entityError;
+    }
+
+    for (const row of (entityData ?? []) as CampaignLookupRow[]) {
       campaignNameByExternalId.set(row.external_id, row.name || 'Unnamed campaign');
     }
   }
@@ -215,7 +297,35 @@ async function lookupAdsetForDebug(input: {
     return null;
   }
 
-  return (data ?? null) as AdsetDebugLookupRow | null;
+  if (data) {
+    return data as AdsetDebugLookupRow;
+  }
+
+  const { data: entityData, error: entityError } = await input.supabase
+    .from('ad_entities')
+    .select('id, external_id, parent_external_id, name')
+    .eq('ad_account_id', input.adAccountId)
+    .eq('entity_level', 'adset')
+    .eq('external_id', input.adsetExternalId)
+    .maybeSingle();
+
+  if (entityError) {
+    console.error(`${ADS_METRICS_LOG_PREFIX} Failed to load adset entity debug lookup`, {
+      adAccountId: input.adAccountId,
+      adsetExternalId: input.adsetExternalId,
+      error: entityError,
+    });
+    return null;
+  }
+
+  return entityData
+    ? {
+        id: entityData.id,
+        external_id: entityData.external_id,
+        campaign_external_id: entityData.parent_external_id ?? '',
+        name: entityData.name,
+      }
+    : null;
 }
 
 export async function getAdsLifetimeIncludingZeros(

@@ -2,6 +2,7 @@ import { cache } from 'react';
 import { redirect, unstable_rethrow } from 'next/navigation';
 import { getLoggedInUserOrRedirect } from '@/lib/server/actions/user/account';
 import { getCachedOrganizationBusinessContext } from '@/lib/server/actions/business/context';
+import { getSelectedOrganizationId } from '@/lib/server/actions/app/workspace-selection';
 import { createServerTimer } from '@/lib/server/timing';
 import type { Database } from '@/lib/shared/types/supabase';
 
@@ -31,8 +32,11 @@ export const getRequiredAppContext = cache(
     const timer = createServerTimer('context', { enabledEnvVar: 'CONTEXT_TIMING' });
     try {
       const user = await timer.measure('get logged in user', () => getLoggedInUserOrRedirect());
+      const selectedOrganizationId = await timer.measure('get selected organization', () =>
+        getSelectedOrganizationId(user.id)
+      );
       const businessContext = await timer.measure('cached organization business context', () =>
-        getCachedOrganizationBusinessContext(user.id)
+        getCachedOrganizationBusinessContext(user.id, selectedOrganizationId)
       );
 
       if (requireOnboardingCompleted && !businessContext.onboarding.onboarding_completed) {

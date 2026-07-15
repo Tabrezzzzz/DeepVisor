@@ -1,0 +1,180 @@
+# DeepVisor Production Architecture TODO
+
+## Production Readiness
+- [x] Write a production architecture ADR covering Next.js, Supabase, Edge Functions, sync jobs, reporting, AI, integrations, and deployment ownership.
+  - Files changed: `docs/architecture/adr-0001-production-architecture.md`, `docs/architecture/architecture-overview.md`, `docs/architecture/api-architecture.md`, `docs/architecture/testing-strategy.md`, `README.md`.
+  - Verification: `npm run lint`, `npm run typecheck`, `npm run build`.
+  - Remaining risk: detailed module-boundary docs and runbooks still need expansion.
+- [ ] Grade all 10 production cores and close launch blockers: domain, data, API, security, infrastructure, scalability, observability, testing, deployment, and recovery.
+  - Progress: production risk register and architecture docs now grade the major launch blockers.
+  - Files changed: `docs/architecture/architecture-overview.md`, `docs/architecture/security-architecture.md`, `docs/architecture/observability.md`, `docs/architecture/risks-and-decisions.md`.
+  - Verification: `npm run typecheck`, `git diff --check`.
+  - Remaining risk: blockers are documented but not all closed.
+- [ ] Add CI gates for lint, typecheck, build, migration validation, and targeted integration tests before production deploys.
+  - Progress: baseline CI now runs install, lint, typecheck, and build in `.github/workflows/production-checks.yml`; `package.json` now has `typecheck` and `verify`.
+  - Progress: Vitest unit tests are now included in `npm run verify`; CI now runs the unified local production gate.
+  - Progress: repository-level migration validation now checks Supabase migration names/order/basic SQL integrity and runs inside `npm run verify`.
+  - Files changed: `package.json`, `package-lock.json`, `.github/workflows/production-checks.yml`, `scripts/validate-migrations.mjs`, `README.md`, `docs/architecture/testing-strategy.md`.
+  - Verification: `npm run migrations:check`, targeted ESLint, targeted unit test, `npm run typecheck`, `npm run verify`.
+  - Remaining risk: migrations are not yet applied to a local Supabase database in CI, and no integration test suite exists yet, so this stays open.
+- [ ] Add a staging environment with production-like Supabase, Meta app mode, callback URLs, cron jobs, and seeded test workspaces.
+- [x] Define RPO/RTO, backup restore checks, incident runbooks, and data deletion recovery rules.
+  - Progress: infra/devops doc now records backup, rollback, environment, and recovery requirements.
+  - Progress: production recovery runbook now defines RPO/RTO targets, restore-drill steps, incident severity flow, rollback checklist, and data-deletion replay rules after backup restore.
+  - Files changed: `docs/architecture/infra-devops.md`, `docs/architecture/risks-and-decisions.md`, `docs/runbooks/production-recovery.md`.
+  - Verification: documentation review.
+  - Remaining risk: the restore drill still needs to be executed against a staging restore target before production launch.
+
+## Multi-Workspace / Multi-Business
+- [x] Extend the existing `organizations` and `organization_memberships` model into a full workspace switcher instead of creating a parallel workspace table.
+  - Progress: top-bar workspace switcher now lists, switches, and creates organization-backed workspaces without introducing a parallel workspace table.
+  - Files changed: `src/components/layout/topBar/WorkspaceSwitcherClient.tsx`, `src/components/layout/topBar/TopBarClient.tsx`, `src/app/api/workspaces/route.ts`, `src/app/api/workspaces/switch/route.ts`, `docs/architecture/api-architecture.md`, `docs/architecture/architecture-overview.md`.
+  - Verification: `npm run lint`, `npm run typecheck`, `npm run build`.
+  - Remaining risk: production invite email delivery still requires a transactional email provider.
+- [x] Add persistent selected workspace storage per user, then update `getRequiredAppContext` to resolve the selected membership instead of the first membership.
+  - Files changed: `supabase/migrations/20260710103000_add_user_workspace_preferences.sql`, `src/lib/server/actions/app/workspace-selection.ts`, `src/lib/server/actions/app/context.ts`, `src/lib/server/actions/business/context.ts`, `src/app/api/workspaces/route.ts`, `src/app/api/workspaces/switch/route.ts`, `docs/architecture/api-architecture.md`, `docs/architecture/architecture-overview.md`, `docs/architecture/risks-and-decisions.md`.
+  - Verification: targeted ESLint, `npm run typecheck`, `npm run verify`.
+  - Remaining risk: workspace switcher UI and member administration flows are separate open items.
+- [x] Add workspace creation, invite, accept, role change, remove member, transfer owner, and leave workspace flows.
+  - Progress: workspace create/switch APIs are live; member administration now supports invites, invite acceptance, role updates, owner transfer payloads, member removal, invitation revoke, self-service leave, and last-owner protection.
+  - Progress: Settings now has a workspace admin panel for members, pending invitations, retention, and billing status; invitation creation exposes a secure accept URL because email delivery is not configured in this repo.
+  - Files changed: `src/app/api/workspaces/route.ts`, `src/app/api/workspaces/switch/route.ts`, `src/app/api/workspaces/members/route.ts`, `src/app/api/workspaces/invitations/accept/route.ts`, `src/app/api/workspaces/settings/route.ts`, `src/app/(root)/settings/page.tsx`, `src/app/(root)/settings/components/WorkspaceManagementClient.tsx`, `supabase/migrations/20260711120000_add_workspace_management_tables.sql`, `docs/architecture/api-architecture.md`, `docs/architecture/architecture-overview.md`.
+  - Verification: `npm run lint`, `npm run typecheck`, `npm run build`.
+  - Remaining risk: production invite email sending is not implemented; the route returns a secure invite URL for an email provider to send.
+- [ ] Audit every server route/action using `createAdminClient` and enforce membership plus role checks before touching `business_id` scoped data.
+  - Progress: added a repeatable service-role route/action inventory script that scans API routes and server actions for `createAdminClient` usage and checks for app-context, internal-request, public-route, or context-helper boundaries.
+  - Progress: current audit finds 38 admin-client files and 0 files missing an auth/internal/public/context boundary.
+  - Files changed: `scripts/audit-service-role-routes.mjs`, `package.json`, `docs/architecture/security-architecture.md`.
+  - Verification: `npm run service-role:audit`.
+  - Remaining risk: the script is a boundary guardrail, not a full authorization proof; endpoint-by-endpoint owner/admin role requirements still need manual review and enforcement where member-safe access is not intended.
+- [ ] Update RLS policies for all business-scoped tables so workspace members can only access businesses attached to their organizations.
+- [x] Scope platform selection cookies by workspace to prevent a selected Meta/Google account from leaking across businesses.
+  - Files changed: `src/lib/server/actions/app/workspace-selection.ts`, `src/lib/server/actions/app/selection.ts`, `src/components/layout/topBar/setSelection.ts`, `src/lib/server/integrations/metaSelection.ts`, `src/components/layout/topBar/TopBar.tsx`, `src/components/layout/topBar/TopBarClient.tsx`, `src/components/layout/topBar/PlatformAdAccountDropdownClient.tsx`, `src/components/layout/MobileAppChromeClient.tsx`, `src/app/api/integrations/meta/select-ad-account/route.ts`, `src/app/api/integrations/google/select-ad-account/route.ts`, `docs/architecture/api-architecture.md`, `docs/architecture/security-architecture.md`.
+  - Verification: targeted ESLint, `npm run typecheck`, `npm run verify`.
+  - Remaining risk: legacy global selection cookies are still read as a temporary migration fallback until old sessions age out.
+- [ ] Add workspace-level billing, integration limits, retention settings, report branding, notification preferences, and audit logs.
+  - Progress: added `workspace_settings`, `workspace_billing_profiles`, owner/admin settings update API, retention UI, and audit events for invites, accepts, role changes, removals, revokes, leave, settings update, create, and switch.
+  - Files changed: `supabase/migrations/20260711120000_add_workspace_management_tables.sql`, `src/app/api/workspaces/members/route.ts`, `src/app/api/workspaces/invitations/accept/route.ts`, `src/app/api/workspaces/settings/route.ts`, `src/app/(root)/settings/components/WorkspaceManagementClient.tsx`, `docs/architecture/api-architecture.md`.
+  - Verification: `npm run lint`, `npm run typecheck`, `npm run build`.
+  - Remaining risk: billing is storage/display only, not payment-provider billing; notification/report-branding UI is not complete.
+
+## Meta / Facebook Developer Compliance
+- [x] Build a Meta permission inventory that maps each requested scope to the exact UI feature and API endpoint using it.
+  - Files changed: `docs/compliance/meta-permissions.md`.
+  - Verification: `npm run typecheck`, `git diff --check`.
+  - Remaining risk: App Review screenshots/test-user walkthrough still need to be prepared.
+- [x] Revisit requested Meta OAuth scopes and keep least-privilege defaults; request `ads_management` only for create/edit/publish operations, and request lead permissions only for lead sync.
+  - Files changed: `src/lib/server/integrations/adapters/meta.ts`, `docs/compliance/meta-permissions.md`.
+  - Verification: targeted ESLint, `npm run typecheck`, `git diff --check`.
+  - Remaining risk: `instagram_basic` should be removed later if Instagram account metadata is removed from page/campaign setup.
+- [x] Add a Meta data deletion callback endpoint that verifies the signed request, deletes or queues deletion for Meta-derived user/workspace data, and returns a confirmation URL/code.
+  - Files changed: `src/app/api/meta/data-deletion/route.ts`, `src/app/(public)/privacy/data-deletion/[confirmationCode]/page.tsx`, `src/lib/server/privacy/providerDataDeletion.ts`, `supabase/migrations/20260710090000_add_provider_data_deletion_requests.sql`, `src/lib/server/integrations/adapters/meta.ts`, `src/app/api/integrations/callback/[platform]/route.ts`, `docs/architecture/security-architecture.md`, `docs/architecture/architecture-overview.md`.
+  - Verification: targeted ESLint, `npm run typecheck`, `npm run build`.
+  - Remaining risk: legacy integrations connected before provider user ID storage may require reconnect or manual privacy review; future provider tables must be added to the deletion processor as the schema grows.
+- [ ] Add in-app data export and deletion request surfaces for account data, workspace data, connected platform data, and Meta-derived data.
+- [x] Update the privacy policy to describe Platform Data collection, processing purpose, sharing, retention, user deletion rights, and the deletion request path in Meta review language.
+  - Files changed: `src/components/legal/PrivacyPolicyPage.tsx`.
+  - Verification: targeted ESLint, `npm run typecheck`, `npm run build`.
+  - Remaining risk: legal counsel/platform-review wording should still review before production submission.
+- [ ] Track Meta Marketing API call volume and error rate so the app can prove eligibility for the current Marketing API Access Tier requirements.
+- [ ] Add App Review evidence: test user path, screen walkthrough, permission justification, privacy/deletion URLs, and production callback URLs.
+
+## Google Ads Architecture And UI
+- [x] Treat Google Ads as an activated connect/sync/reporting integration, not a preview channel, wherever Google credentials and connected customers exist.
+  - Progress: Google Ads remains an active supported platform in OAuth, integration actions, account selection, top-bar platform selection, sync, campaigns, and reports; campaign creation stays intentionally disabled until a Google mutation service exists.
+  - Files changed: `src/lib/shared/utils/integrations.ts`, `src/app/(root)/integration/components/IntegrationClient.tsx`, `src/app/api/integrations/google/credentials/route.ts`, `src/app/api/integrations/google/select-ad-account/route.ts`, `src/components/layout/topBar/PlatformAdAccountDropdownClient.tsx`, `docs/architecture/api-architecture.md`.
+  - Verification: `npm run lint`, `npm run typecheck`, `npm run build`.
+  - Remaining risk: live Google Ads campaign mutation remains intentionally disabled.
+- [x] Add Google Ads customer setup diagnostics: credential mode, developer token status, manager login customer ID, OAuth status, accessible customers, selected customer, and latest GAQL error.
+  - Progress: owner/admin diagnostics API and modal now report workspace/app credential mode, developer-token presence, login customer ID, refresh token status, accessible customer accounts, selected customer, and database readiness.
+  - Files changed: `src/app/api/integrations/google/diagnostics/route.ts`, `src/app/(root)/integration/components/IntegrationClient.tsx`, `docs/architecture/api-architecture.md`, `docs/architecture/observability.md`.
+  - Verification: `npm run lint`, `npm run typecheck`, `npm run build`.
+  - Remaining risk: provider quota/access-level telemetry still needs durable storage.
+- [x] Add Google-specific dashboard metrics: conversions, conversion value, CPA, ROAS, CTR, CPC, impression share, lost IS budget/rank, and budget-limited risk.
+  - Progress: Google sync and summary repositories now persist conversions, conversion value, CPA, ROAS, search impression share, and lost impression share fields where Google Ads returns them; Campaigns consumes those metrics from the selected Google account.
+  - Files changed: `supabase/migrations/20260711123000_add_google_ads_performance_metrics.sql`, `src/lib/server/sync/google/syncGoogleBusinessPlatform.ts`, `src/lib/server/repositories/ad_entities/upsertAdEntityPerformanceDaily.ts`, `src/lib/server/repositories/ad_entities/refreshAdEntityPerformanceSummaries.ts`, `src/lib/server/repositories/campaigns/getCampaignSummaries.ts`, `src/lib/server/repositories/campaigns/getCampaignsMetrics.ts`, `src/app/(root)/campaigns/page.tsx`, `src/components/campaigns/CampaignDashboard.tsx`.
+  - Verification: `npm run lint`, `npm run typecheck`, `npm run build`.
+  - Remaining risk: budget-limited recommendation text is derived from available metric fields; Google Recommendations API is not yet synced.
+- [x] Redesign Google Campaigns around a full campaign table with campaign channel type, budget, spend, conversions, conversion value, ROAS, CPA, CTR, CPC, impression share, status, and recommendation.
+  - Progress: selected Google accounts now use the full campaign table flow instead of empty/preview UI; campaign rows are backed by shared synced Google entity summaries and include Google performance fields in the data model.
+  - Files changed: `src/app/(root)/campaigns/page.tsx`, `src/components/campaigns/CampaignDashboard.tsx`, `src/lib/server/repositories/campaigns/getCampaignSummaries.ts`, `src/lib/server/repositories/campaigns/getCampaignsMetrics.ts`.
+  - Verification: `npm run lint`, `npm run typecheck`, `npm run build`.
+  - Remaining risk: budget fields and Google Recommendations API are not yet persisted, so recommendation depth is limited to synced metrics.
+- [ ] Add Google drilldowns for Campaigns -> Ad Groups -> Ads -> Assets/Keywords/Search Terms where Google Ads API data exists.
+  - Progress: Campaigns -> Ad Groups -> Ads now reads Google `ad_entities` and `ad_entity_performance_summary`, not only legacy Meta dimension tables.
+  - Files changed: `src/lib/server/repositories/adsets/getAdSetsMetrics.ts`, `src/lib/server/repositories/ads/getAdsMetrics.ts`, `src/components/campaigns/CampaignDashboard.tsx`.
+  - Verification: `npm run lint`, `npm run typecheck`, `npm run build`.
+  - Remaining risk: keyword, search-term, and asset-level Google tables/routes/UI are still not implemented.
+- [ ] Add Google Reports filters for customer, campaign, ad group, channel type, device, network, conversion action, and date range.
+- [ ] Add Google report charts: campaign ranking bars, spend-vs-conversions efficiency, channel mix, impression-share loss, CPA distribution, device performance, conversion action mix, and budget-limited map.
+- [ ] Keep Google campaign create/edit/publish disabled until a Google-specific builder and mutation authorization model are implemented.
+- [ ] Add Google Ads API operation/quota/error telemetry and developer-token access level visibility.
+
+## Security And Privacy
+- [x] Confirm all OAuth tokens are stored only through Supabase Vault/RPC secret references and never in JSON payloads, logs, client props, screenshots, or analytics.
+  - Files changed: `docs/architecture/security-architecture.md`, `README.md`.
+  - Verification: token/secret audit with `rg`, `npm run typecheck`, `git diff --check`.
+  - Remaining risk: production data should still be scanned for legacy token-shaped values in `integration_details`; Vault RPC grants should be tightened or wrapped server-side.
+- [ ] Add token rotation/reconnect handling, disconnect cleanup, and secret deletion or revocation where supported by the provider.
+  - Progress: integration disconnect now clears token refs and deletes stored token secret rows through a service-role-only `delete_platform_token` RPC.
+  - Files changed: `supabase/migrations/20260710113000_add_token_delete_and_audit_events.sql`, `src/lib/server/integrations/service.ts`, `src/app/api/integrations/disconnect/route.ts`, `docs/architecture/security-architecture.md`.
+  - Verification: targeted ESLint, `npm run typecheck`, `npm run verify`.
+  - Remaining risk: provider-side OAuth revocation and proactive token rotation/reconnect handling are still open.
+- [ ] Resolve dependency audit findings without breaking verified app/runtime behavior.
+  - Progress: ran `npm audit fix` without `--force`; safe dependency/lockfile updates were applied.
+  - Files changed: `package-lock.json`, `docs/architecture/security-architecture.md`.
+  - Verification: `npm audit --audit-level=moderate` identifies the remaining findings and fix paths; `npm run verify` passes after safe dependency updates.
+  - Remaining risk: 8 moderate transitive audit findings remain through `passkit-generator -> joi`, `next -> postcss`, and `googleapis -> googleapis-common -> uuid`; npm recommends `--force` breaking changes, so these require compatibility testing before upgrading.
+- [ ] Add structured validation with Zod or equivalent at every API boundary, especially sync, reporting filters, campaign builder, and account selection.
+  - Progress: report subscription mutation now uses Zod validation; workspace APIs and several provider/account routes already validate route payloads.
+  - Progress: campaign draft save, revive draft creation, manual intelligence finding refresh, and finding approve/dismiss now validate payloads or route params with Zod before service-role work.
+  - Progress: auth email verification now validates the requested Supabase OTP type before calling `verifyOtp`.
+  - Progress: Meta/Google ad-account selection, Google credential updates, and Meta Page/WhatsApp setup now validate request bodies with Zod before provider calls or service-role writes.
+  - Files changed: `src/app/api/reports/subscriptions/route.ts`, `src/app/api/campaign-drafts/route.ts`, `src/app/api/campaigns/revive-draft/route.ts`, `src/app/api/intelligence/findings/run/route.ts`, `src/app/api/intelligence/findings/[findingId]/approve/route.ts`, `src/app/api/intelligence/findings/[findingId]/dismiss/route.ts`, `src/app/api/auth/verification/route.ts`, `src/app/api/integrations/meta/select-ad-account/route.ts`, `src/app/api/integrations/google/select-ad-account/route.ts`, `src/app/api/integrations/meta/page-whatsapp-setup/route.ts`, `src/app/api/integrations/google/credentials/route.ts`, `docs/architecture/api-architecture.md`.
+  - Verification: targeted review; full `npm run lint`, `npm run typecheck`, `npm run build` deferred until all current TODO work is complete per user instruction.
+  - Remaining risk: many existing API boundaries still parse ad hoc request bodies/search params.
+- [ ] Add rate limits and abuse controls to auth-adjacent, sync, export, AI, and campaign creation endpoints.
+  - Progress: added database-backed `api_rate_limits` and `consume_api_rate_limit`; enforced limits on Meta data deletion, OAuth connect/callback, integration disconnect, manual sync refresh, AI assistant, report PDF export, report CSV export, and report subscription updates.
+  - Progress: internal worker routes now share `requireInternalRequest`, a timing-safe `INTERNAL_API_KEY` guard.
+  - Progress: campaign draft save, revive draft creation, manual intelligence finding refresh, finding approve/dismiss, and manual Meta lead sync now have user/business-scoped rate limits.
+  - Progress: Supabase auth callback and email verification routes now have IP-scoped rate limits.
+  - Progress: password login, signup, and resend verification server actions now have IP-scoped and email-hash-scoped rate limits with generic non-enumerating responses.
+  - Progress: active provider/config mutation routes for Meta/Google ad-account selection, Google credential updates, and Meta Page/WhatsApp setup now have user/business-scoped rate limits.
+  - Progress: the old manual Meta builder no longer calls the missing `/api/meta/create-campaign` endpoint; it saves an audited draft through `/api/campaign-drafts` until live provider publishing is implemented properly.
+  - Files changed: `supabase/migrations/20260710120000_add_api_rate_limits.sql`, `src/lib/server/security/rateLimit.ts`, `src/lib/server/security/internalAuth.ts`, `src/lib/server/actions/user/auth.ts`, `src/app/api/meta/data-deletion/route.ts`, `src/app/api/auth/callback/route.ts`, `src/app/api/auth/verification/route.ts`, `src/app/api/integrations/connect/[platform]/route.ts`, `src/app/api/integrations/callback/[platform]/route.ts`, `src/app/api/integrations/disconnect/route.ts`, `src/app/api/integrations/meta/select-ad-account/route.ts`, `src/app/api/integrations/google/select-ad-account/route.ts`, `src/app/api/integrations/meta/page-whatsapp-setup/route.ts`, `src/app/api/integrations/google/credentials/route.ts`, `src/app/api/sync/refresh/route.ts`, `src/app/api/sync/scheduled-refresh/route.ts`, `src/app/api/intelligence/assistant/route.ts`, `src/app/api/reports/pdf/route.ts`, `src/app/api/reports/csv/route.ts`, `src/app/api/reports/subscriptions/route.ts`, `src/app/api/campaign-drafts/route.ts`, `src/app/api/campaigns/revive-draft/route.ts`, `src/app/api/intelligence/findings/run/route.ts`, `src/app/api/intelligence/findings/[findingId]/approve/route.ts`, `src/app/api/intelligence/findings/[findingId]/dismiss/route.ts`, `src/app/api/leads/meta/sync/route.ts`, `src/app/api/internal/account-intelligence/retention/route.ts`, `src/app/api/integrations/meta/process-backfill-jobs/route.ts`, `src/app/api/integrations/refetch-ad-accounts/route.ts`, `src/app/api/calendar/queue/process/route.ts`, `src/components/campaigns/create/platforms/meta/hooks/useCampaignSubmit.ts`, `src/components/campaigns/create/platforms/meta/steps/ReviewStep.tsx`, `src/components/campaigns/create/platforms/meta/components/ManualMetaAdReview.tsx`, `src/components/campaigns/create/platforms/meta/components/ManualMetaAdSetReview.tsx`, `docs/architecture/security-architecture.md`, `docs/architecture/api-architecture.md`.
+  - Verification: targeted review, `npm run lint`, `npm run typecheck`; full `npm run build` deferred until all current TODO work is complete per user instruction.
+  - Remaining risk: live provider publish/edit endpoints are intentionally disabled until a dedicated provider mutation service exists with idempotency, audit, rate limits, and App Review/permission checks; any future worker routes must use the shared internal guard.
+- [ ] Add audit events for connect, disconnect, sync, export, delete, report generation, campaign create/edit, approval decisions, and workspace role changes.
+  - Progress: added `app_audit_events` with RLS plus audit writes for workspace creation, workspace selection, OAuth connect start, OAuth connect completion, integration disconnect, report export, and report subscription updates.
+  - Progress: added audit writes for campaign draft creation/update, revive draft creation, manual intelligence finding refresh, finding approval/dismissal, and manual Meta lead sync.
+  - Progress: added audit writes for Meta/Google ad-account selection, Google credential updates, and Meta Page/WhatsApp setup.
+  - Files changed: `supabase/migrations/20260710113000_add_token_delete_and_audit_events.sql`, `src/lib/server/audit/logAuditEvent.ts`, `src/app/api/workspaces/route.ts`, `src/app/api/workspaces/switch/route.ts`, `src/app/api/integrations/connect/[platform]/route.ts`, `src/app/api/integrations/callback/[platform]/route.ts`, `src/app/api/integrations/disconnect/route.ts`, `src/app/api/integrations/meta/select-ad-account/route.ts`, `src/app/api/integrations/google/select-ad-account/route.ts`, `src/app/api/integrations/meta/page-whatsapp-setup/route.ts`, `src/app/api/integrations/google/credentials/route.ts`, `src/app/api/reports/csv/route.ts`, `src/app/api/reports/pdf/route.ts`, `src/app/api/reports/subscriptions/route.ts`, `src/app/api/campaign-drafts/route.ts`, `src/app/api/campaigns/revive-draft/route.ts`, `src/app/api/intelligence/findings/run/route.ts`, `src/app/api/intelligence/findings/[findingId]/approve/route.ts`, `src/app/api/intelligence/findings/[findingId]/dismiss/route.ts`, `src/app/api/leads/meta/sync/route.ts`, `docs/architecture/api-architecture.md`, `docs/architecture/security-architecture.md`, `docs/architecture/observability.md`.
+  - Verification: targeted review, `npm run lint`, `npm run typecheck`; full `npm run build` deferred until all current TODO work is complete per user instruction.
+  - Remaining risk: delete, report generation internals, future direct provider publish/mutation, and workspace role changes still need event coverage.
+
+## Sync, Data, And Reporting Reliability
+- [ ] Formalize sync job idempotency, locking, retries, backoff, dead-letter states, and operator replay tooling.
+- [ ] Separate structure sync, insight sync, lead sync, and reporting rollups with explicit freshness indicators.
+- [ ] Add account-scoped freshness checks so Reports, Campaigns, Leads, Dashboard, and Header all agree on connected/disconnected state.
+- [ ] Add retention jobs for detailed performance rows, lead records, AI outputs, reports, logs, and deleted workspace cleanup.
+- [ ] Add query budgets and indexes for high-volume reporting tables before allowing multiple workspaces and accounts per user.
+
+## Observability And Quality
+- [ ] Add Sentry or equivalent error tracking with redaction for tokens, lead PII, and platform payloads.
+- [ ] Add correlation IDs across request, sync job, Meta/Google API call, report generation, and AI generation.
+  - Progress: Next.js proxy now normalizes or generates `x-request-id` for page and API requests, forwards it to downstream handlers, and returns it on responses. API requests pass through without Supabase auth redirects so callbacks/webhooks remain usable.
+  - Files changed: `src/proxy.ts`, `src/lib/server/supabase/proxy.ts`, `docs/architecture/observability.md`.
+  - Verification: targeted ESLint, `npm run typecheck`, `npm run verify`.
+  - Remaining risk: sync jobs, Meta/Google API calls, report generation internals, and AI generation records still need explicit propagation and log/metric inclusion.
+- [ ] Add dashboard health checks for Supabase, Vault RPC, Meta OAuth, Meta Graph API, scheduled sync, PDF export, and AI provider status.
+  - Progress: added `GET /api/health` with Supabase service-role query and environment checks for Supabase, Meta, Google Ads, and OpenAI.
+  - Files changed: `src/app/api/health/route.ts`, `docs/architecture/observability.md`, `docs/architecture/infra-devops.md`.
+  - Verification: targeted ESLint, `npm run typecheck`.
+  - Remaining risk: this is an API health endpoint, not a dashboard; Vault RPC, live Meta/Google API checks, scheduled sync, PDF export, and AI provider probe checks still need implementation.
+- [ ] Add Playwright smoke tests for login, onboarding, workspace switching, integration connect mock, campaigns, reports, leads, dark mode, and mobile shell.
+- [ ] Add unit tests for workspace context resolution, OAuth state consumption, signed request verification, report date bucketing, and selected account scoping.
+  - Progress: testing strategy and observability requirements are now documented.
+  - Progress: added Vitest and unit coverage for Meta data deletion signed-request verification, including valid signatures, tampered payloads, unsupported algorithms, and missing app secret.
+  - Files changed: `package.json`, `package-lock.json`, `src/lib/server/privacy/metaSignedRequest.ts`, `src/lib/server/privacy/metaSignedRequest.test.ts`, `src/app/api/meta/data-deletion/route.ts`, `docs/architecture/testing-strategy.md`, `docs/architecture/observability.md`.
+  - Verification: `npm test -- --run src/lib/server/privacy/metaSignedRequest.test.ts`, targeted ESLint, `npm run typecheck`, `npm run verify`.
+  - Remaining risk: workspace context resolution, OAuth state consumption, report date bucketing, selected account scoping, Playwright suite, Sentry, metrics, and health dashboard coverage are still missing.

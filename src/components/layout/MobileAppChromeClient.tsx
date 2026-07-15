@@ -48,8 +48,8 @@ import {
 import PlatformAdAccountDropdownClient from './topBar/PlatformAdAccountDropdownClient';
 
 type MobileAppChromeClientProps = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   userInfo: any;
+  businessId: string;
   platforms?: Array<{ id: string; platform_name: string }>;
   adAccounts?: Array<{
     id: string;
@@ -72,6 +72,7 @@ function formatNotificationTime(value: string) {
 
 export default function MobileAppChromeClient({
   userInfo,
+  businessId,
   platforms = [],
   adAccounts = [],
   notifications = [],
@@ -177,6 +178,7 @@ export default function MobileAppChromeClient({
 
         <div style={{ minWidth: 0, flex: 1 }}>
           <PlatformAdAccountDropdownClient
+            businessId={businessId}
             platforms={platforms}
             adAccounts={adAccounts}
             initialPlatformId={initialPlatformId}
@@ -291,6 +293,7 @@ export default function MobileAppChromeClient({
       >
         <Stack gap="md">
           <PlatformAdAccountDropdownClient
+            businessId={businessId}
             platforms={platforms}
             adAccounts={adAccounts}
             initialPlatformId={initialPlatformId}
@@ -407,7 +410,7 @@ export default function MobileAppChromeClient({
                   backgroundColor: active ? accentSoft : 'transparent',
                 }}
               >
-                <item.icon size={20} stroke={active ? 2.2 : 1.8} />
+                <item.icon size={20} strokeWidth={active ? 2.2 : 1.8} />
                 <span className="w-full truncate">{item.shortName}</span>
               </button>
             );
@@ -436,7 +439,7 @@ export default function MobileAppChromeClient({
           {mobileBottomNavItems.slice(2).map((item) => {
             const active = isMobileBottomItemActive(item.route);
             const isNotifications = item.route === '/notifications';
-            const icon = <item.icon size={20} stroke={active ? 2.2 : 1.8} />;
+            const icon = <item.icon size={20} strokeWidth={active ? 2.2 : 1.8} />;
 
             return (
               <button

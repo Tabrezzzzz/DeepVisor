@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { getRequiredAppContext } from '@/lib/server/actions/app/context';
+import { logAuditEvent } from '@/lib/server/audit/logAuditEvent';
 import {
   getBusinessIntegrationById,
 } from '@/lib/server/integrations/service';
+import { consumeRateLimit, rateLimitResponse } from '@/lib/server/security/rateLimit';
 import { createAdminClient } from '@/lib/server/supabase/admin';
 import {
   applyAppSelectionCookies,
@@ -39,6 +42,11 @@ function getSelectionUserMessage(message: string): string {
   return message;
 }
 
+const selectMetaAdAccountSchema = z.object({
+  integrationId: z.string().trim().min(1).max(128),
+  externalAccountId: z.string().trim().min(1).max(128),
+});
+
 /**
  * Selects a primary Meta ad account for an integration and kicks off the initial sync workflow.
  *
@@ -51,14 +59,21 @@ function getSelectionUserMessage(message: string): string {
  */
 export async function POST(request: NextRequest) {
   try {
-    const { businessId } = await getRequiredAppContext();
-    const body = await request.json().catch(() => ({}));
-    const integrationId =
-      typeof body.integrationId === 'string' ? body.integrationId : null;
-    const externalAccountId =
-      typeof body.externalAccountId === 'string' ? body.externalAccountId : null;
+    const { businessId, organizationId, user } = await getRequiredAppContext();
+    const limiter = await consumeRateLimit({
+      identifier: `user:${user.id}:business:${businessId}`,
+      action: 'integration.meta.select_ad_account',
+      limit: 20,
+      windowSeconds: 60 * 60,
+    });
 
-    if (!integrationId || !externalAccountId) {
+    if (!limiter.allowed) {
+      return rateLimitResponse(limiter);
+    }
+
+    const parsed = selectMetaAdAccountSchema.safeParse(await request.json().catch(() => null));
+
+    if (!parsed.success) {
       return NextResponse.json(
         fail('Missing account selection payload', ErrorCode.VALIDATION_ERROR, {
           userMessage: 'Choose one Meta ad account to continue.',
@@ -67,6 +82,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const { integrationId, externalAccountId } = parsed.data;
     const supabase = createAdminClient();
     const integration = await getBusinessIntegrationById(supabase, {
       businessId,
@@ -147,6 +163,22 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    await logAuditEvent(supabase, {
+      businessId,
+      organizationId,
+      actorUserId: user.id,
+      eventType: 'integration.meta_ad_account_selected',
+      resourceType: 'ad_account',
+      resourceId: result.adAccountId,
+      platformIntegrationId: result.integrationId,
+      metadata: {
+        externalAccountId: result.externalAccountId,
+        firstSyncJobStatus: firstSyncJob?.status ?? null,
+      },
+      ipAddress: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      userAgent: request.headers.get('user-agent'),
+    });
+
     const response = NextResponse.json(
       ok({
         integrationId: result.integrationId,
@@ -157,6 +189,7 @@ export async function POST(request: NextRequest) {
       })
     );
     applyAppSelectionCookies(response, {
+      businessId,
       platformIntegrationId: result.integrationId,
       adAccountId: result.adAccountId,
     });

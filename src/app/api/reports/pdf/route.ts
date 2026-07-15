@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireUserId } from '@/lib/server/actions/user/session';
-import { getOrCreateOrganizationBusinessContext } from '@/lib/server/actions/business/context';
+import { getRequiredAppContext } from '@/lib/server/actions/app/context';
+import { logAuditEvent } from '@/lib/server/audit/logAuditEvent';
+import { consumeRateLimit, rateLimitResponse } from '@/lib/server/security/rateLimit';
+import { createAdminClient } from '@/lib/server/supabase/admin';
 import { parseReportQueryInput } from '@/lib/server/reports/query';
 import { renderReportPdfBuffer } from '@/lib/server/reports/pdf/renderReportPdf';
 
@@ -12,8 +14,18 @@ function isTruthySearchParam(value: string | null): boolean {
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = await requireUserId();
-    const context = await getOrCreateOrganizationBusinessContext(userId);
+    const context = await getRequiredAppContext(false);
+    const limiter = await consumeRateLimit({
+      identifier: `user:${context.user.id}:business:${context.businessId}`,
+      action: 'report.pdf',
+      limit: 20,
+      windowSeconds: 60 * 60,
+    });
+
+    if (!limiter.allowed) {
+      return rateLimitResponse(limiter);
+    }
+
     const query = parseReportQueryInput(
       context.businessId,
       Object.fromEntries(request.nextUrl.searchParams.entries())
@@ -22,6 +34,21 @@ export async function GET(request: NextRequest) {
       query,
       organizationName: context.organizationName,
       demo: isTruthySearchParam(request.nextUrl.searchParams.get('demo')),
+    });
+    await logAuditEvent(createAdminClient(), {
+      businessId: context.businessId,
+      organizationId: context.organizationId,
+      actorUserId: context.user.id,
+      eventType: 'report.exported',
+      resourceType: 'report',
+      resourceId: 'pdf',
+      metadata: {
+        format: 'pdf',
+        scope: query.scope,
+        rangeMode: query.rangeMode,
+      },
+      ipAddress: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null,
+      userAgent: request.headers.get('user-agent'),
     });
 
     return new NextResponse(buffer, {

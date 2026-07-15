@@ -200,7 +200,7 @@ function defaultMethodSettings(): LeadCampaignMethodSettings {
     instantForm: {
       formStyle: 'higher_intent',
       privacyPolicyUrl: '',
-      qualifyingQuestions: ['Preferred service', 'Preferred appointment day', 'Phone number'],
+      qualifyingQuestions: ['Primary goal', 'Decision timeline', 'Phone number'],
     },
     messages: {
       channel: 'whatsapp',
@@ -273,20 +273,20 @@ function buildCreativeDraft(
   const fallbackByTemplate: Record<LeadCampaignOfferTemplate, { headline: string; primaryText: string; description: string; cta: string }> = {
     new_client_intro: {
       headline: `New client lead offer${roleSuffix}`,
-      primaryText: 'Book a first-time consult and see the right service plan before you commit.',
-      description: 'Consult',
+      primaryText: 'Request a first conversation and see the right growth plan before you commit.',
+      description: 'Strategy consult',
       cta: 'GET_OFFER',
     },
     high_ticket_transformation: {
-      headline: `Transformation consult${roleSuffix}`,
-      primaryText: 'Thinking about a bigger service? Message the business for a quick consult.',
+      headline: `Growth consult${roleSuffix}`,
+      primaryText: 'Thinking about a bigger investment? Message the team for a quick strategy consult.',
       description: 'Consult request',
-      cta: 'BOOK_NOW',
+      cta: 'LEARN_MORE',
     },
     same_day_openings: {
-      headline: `Today openings available${roleSuffix}`,
-      primaryText: 'Call now to ask about same-day openings and available appointment times.',
-      description: 'Same-day openings',
+      headline: `Speak with the team today${roleSuffix}`,
+      primaryText: 'Call now to discuss fit, timeline, and next steps with the team.',
+      description: 'Same-day call review',
       cta: 'CALL_NOW',
     },
   };

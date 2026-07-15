@@ -1,0 +1,4 @@
+interface:
+  display_name: "Metrics Definition"
+  short_description: "Help with Metrics Definition tasks"
+  default_prompt: "Use (metrics-definition.Name) to handle this task."

@@ -56,10 +56,14 @@ interface CampaignDashboardProps {
     link_clicks: number;
     reach: number;
     leads: number;
+    conversions?: number;
+    conversionValue?: number;
     messages: number;
     ctr: number;
     cpc: number;
     cpm: number;
+    cpa?: number;
+    roas?: number;
   };
   initialSelection?: {
     tab?: TabKey;
@@ -82,7 +86,11 @@ function formatCompactNumber(value: number): string {
 }
 
 function formatCurrency(value: number): string {
-  return `$${Number(value || 0).toFixed(2)}`;
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0));
 }
 
 function campaignResults(campaign: FormattedCampaign): number {
@@ -90,18 +98,7 @@ function campaignResults(campaign: FormattedCampaign): number {
 }
 
 function getPlatformColor(platformName: string): string {
-  switch (platformName.toLowerCase()) {
-    case 'facebook':
-    case 'meta':
-      return 'blue';
-    case 'tiktok':
-      return 'pink';
-    case 'google':
-    case 'google ads':
-      return 'green';
-    default:
-      return 'gray';
-  }
+  return platformName ? 'orange' : 'gray';
 }
 
 export default function CampaignDashboard(props: CampaignDashboardProps) {
@@ -191,12 +188,18 @@ export default function CampaignDashboard(props: CampaignDashboardProps) {
     () => campaignData.find((campaign) => campaign.id === selectedCampaignId) ?? null,
     [campaignData, selectedCampaignId]
   );
-  const selectedCampaignAdSets = selectedCampaignId ? adSetsByCampaign[selectedCampaignId] ?? [] : [];
+  const selectedCampaignAdSets = useMemo(
+    () => (selectedCampaignId ? adSetsByCampaign[selectedCampaignId] ?? [] : []),
+    [adSetsByCampaign, selectedCampaignId]
+  );
   const selectedAdSet = useMemo(
     () => selectedCampaignAdSets.find((adSet) => adSet.id === selectedAdSetId) ?? null,
     [selectedAdSetId, selectedCampaignAdSets]
   );
-  const selectedAdSetAds = selectedAdSetId ? adsByAdset[selectedAdSetId] ?? [] : [];
+  const selectedAdSetAds = useMemo(
+    () => (selectedAdSetId ? adsByAdset[selectedAdSetId] ?? [] : []),
+    [adsByAdset, selectedAdSetId]
+  );
   const accountName = campaignData[0]?.accountName ?? 'Selected ad account';
 
   const accountSummary = useMemo(() => {

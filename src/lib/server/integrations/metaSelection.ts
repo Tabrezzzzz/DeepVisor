@@ -11,6 +11,12 @@ import type { SyncTrigger } from '@/lib/server/sync/types';
 import { FULL_HISTORY_BACKFILL_DAYS } from '@/lib/server/sync/types';
 import { resolveMetaBackfillWindow } from '@/lib/server/sync/meta/client';
 import type { FirstSyncJobStatus, SyncCoverage } from '@/lib/shared/types/integrations';
+import {
+  scopedSelectionCookieName,
+  selectionCookieOptions,
+  SELECTED_AD_ACCOUNT_COOKIE,
+  SELECTED_PLATFORM_COOKIE,
+} from '@/lib/server/actions/app/workspace-selection';
 import { setPrimaryMetaAdAccount } from './service';
 
 type AppSupabaseClient = SupabaseClient<Database>;
@@ -147,43 +153,30 @@ export async function syncSelectedMetaAdAccount(
 export function applyAppSelectionCookies(
   response: NextResponse,
   input: {
+    businessId: string;
     platformIntegrationId: string | null;
     adAccountId: string | null;
   }
 ): void {
+  const platformCookie = scopedSelectionCookieName(SELECTED_PLATFORM_COOKIE, input.businessId);
+  const adAccountCookie = scopedSelectionCookieName(SELECTED_AD_ACCOUNT_COOKIE, input.businessId);
+
   if (input.platformIntegrationId) {
-    response.cookies.set('platform_integration_id', input.platformIntegrationId, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: SELECTION_COOKIE_MAX_AGE,
-    });
+    response.cookies.set(
+      platformCookie,
+      input.platformIntegrationId,
+      selectionCookieOptions(SELECTION_COOKIE_MAX_AGE)
+    );
   } else {
-    response.cookies.set('platform_integration_id', '', {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 0,
-    });
+    response.cookies.set(platformCookie, '', selectionCookieOptions(0));
   }
 
   if (input.adAccountId) {
-    response.cookies.set('ad_account_row_id', input.adAccountId, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: SELECTION_COOKIE_MAX_AGE,
-    });
+    response.cookies.set(adAccountCookie, input.adAccountId, selectionCookieOptions(SELECTION_COOKIE_MAX_AGE));
   } else {
-    response.cookies.set('ad_account_row_id', '', {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 0,
-    });
+    response.cookies.set(adAccountCookie, '', selectionCookieOptions(0));
   }
+
+  response.cookies.set(SELECTED_PLATFORM_COOKIE, '', selectionCookieOptions(0));
+  response.cookies.set(SELECTED_AD_ACCOUNT_COOKIE, '', selectionCookieOptions(0));
 }

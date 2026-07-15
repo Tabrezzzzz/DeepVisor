@@ -1,0 +1,4 @@
+interface:
+  display_name: "Layout Grid"
+  short_description: "Help with Layout Grid tasks"
+  default_prompt: "Use (layout-grid.Name) to handle this task."
